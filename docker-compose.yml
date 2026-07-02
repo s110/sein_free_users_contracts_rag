@@ -1,0 +1,98 @@
+# Stack RAG completo. En macOS (Mac Mini) Ollama corre NATIVO en el host
+# (Docker no accede a la GPU Metal) — misma convención que ocr_pdf_markdown.
+# En Linux se puede usar el profile `bundled-ollama`.
+#
+#   docker compose up -d --build                  # qdrant + backend + frontend
+#   docker compose --profile ingest run --rm ingest        # ingesta incremental
+#   docker compose --profile public up -d cloudflared      # exposición pública
+#
+# Config: copia .env.example → .env
+
+name: sein-rag
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"   # solo loopback: la API pública pasa por nginx
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      RAG_QDRANT_URL: http://qdrant:6333
+      RAG_OLLAMA_HOST: ${RAG_OLLAMA_HOST:-http://host.docker.internal:11434}
+      RAG_LLM_MODEL: ${RAG_LLM_MODEL:-qwen3:4b}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-bge-m3}
+      RAG_COLLECTION: ${RAG_COLLECTION:-sein_contracts}
+      RAG_API_KEY: ${RAG_API_KEY:-}
+      RAG_LOG_LEVEL: ${RAG_LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux; en macOS ya existe
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"   # debug local; el tráfico real entra por nginx
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+
+  # --- Ingesta one-shot (idempotente, segura de re-correr) ---
+  ingest:
+    build: ./backend
+    profiles: ["ingest"]
+    command: ["sein-rag-ingest"]
+    environment:
+      RAG_QDRANT_URL: http://qdrant:6333
+      RAG_OLLAMA_HOST: ${RAG_OLLAMA_HOST:-http://host.docker.internal:11434}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-bge-m3}
+      RAG_COLLECTION: ${RAG_COLLECTION:-sein_contracts}
+      RAG_VAULT_DIR: /data/vault
+      RAG_MANIFEST_PATH: /data/index/ingest_manifest.jsonl
+      RAG_LOG_LEVEL: ${RAG_LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${VAULT_DIR:-./data/vault}:/data/vault:ro
+      - index_state:/data/index
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  # --- Solo Linux: Ollama en contenedor ---
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["bundled-ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+
+  # --- Exposición pública sin abrir puertos: Cloudflare Tunnel ---
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["public"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+
+volumes:
+  qdrant_data:
+  index_state:
+  ollama_models:
