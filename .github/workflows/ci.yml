@@ -21,6 +21,7 @@ jobs:
   backend:
     name: Backend (py${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -60,6 +61,7 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -89,6 +91,7 @@ jobs:
   audit:
     name: Auditoría de dependencias
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
@@ -115,6 +118,7 @@ jobs:
   docker:
     name: Imágenes Docker
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -152,7 +156,7 @@ jobs:
             -p 8000:8000 -e RAG_ALLOW_ANONYMOUS=true \
             sein-rag-backend:ci
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/health || true)
+            code=$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' http://localhost:8000/api/health || true)
             # 503 también vale: significa que la app responde, y sin Qdrant
             # ni Ollama en CI el estado degradado es el esperado.
             if [ "$code" = "200" ] || [ "$code" = "503" ]; then
@@ -185,20 +189,20 @@ jobs:
         run: |
           docker run -d --name web --network sein-ci -p 8080:80 sein-rag-frontend:ci
           for i in $(seq 1 20); do
-            curl -fsS http://localhost:8080/ >/dev/null 2>&1 && break
+            curl -fsS --max-time 10 http://localhost:8080/ >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://localhost:8080/ | grep -qi "<div id=\"root\""
+          curl -fsS --max-time 10 http://localhost:8080/ | grep -qi "<div id=\"root\""
 
       - name: La cabecera CSP está presente
-        run: curl -sI http://localhost:8080/ | grep -qi "content-security-policy"
+        run: curl -sI --max-time 10 http://localhost:8080/ | grep -qi "content-security-policy"
 
       # Lo que de verdad importa del frontend: que el proxy llegue al backend.
       # El healthcheck anterior solo probaba index.html desde disco y daba
       # "healthy" con el backend caído.
       - name: El proxy /api/ alcanza al backend
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/health)
+          code=$(curl -s --max-time 30 -o /dev/null -w '%{http_code}' http://localhost:8080/api/health)
           echo "GET /api/health via nginx -> $code"
           test "$code" = "200" || test "$code" = "503"
 
