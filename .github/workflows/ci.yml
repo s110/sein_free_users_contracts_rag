@@ -141,10 +141,15 @@ jobs:
       # Construir no prueba nada: el job anterior nunca ARRANCABA las
       # imágenes, así que un venv mal copiado entre etapas o un entrypoint
       # roto se publicaba en verde.
+      # Red propia con alias `backend`: es el nombre que nginx proxea, así
+      # que sin ella el frontend no se prueba contra nada real.
+      - name: Crear la red del stack
+        run: docker network create sein-ci
+
       - name: El backend arranca y responde
         run: |
-          docker run -d --name api -p 8000:8000 \
-            -e RAG_ALLOW_ANONYMOUS=true \
+          docker run -d --name api --network sein-ci --network-alias backend \
+            -p 8000:8000 -e RAG_ALLOW_ANONYMOUS=true \
             sein-rag-backend:ci
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/health || true)
@@ -178,12 +183,24 @@ jobs:
 
       - name: El frontend sirve la SPA
         run: |
-          docker run -d --name web -p 8080:80 sein-rag-frontend:ci
-          sleep 3
+          docker run -d --name web --network sein-ci -p 8080:80 sein-rag-frontend:ci
+          for i in $(seq 1 20); do
+            curl -fsS http://localhost:8080/ >/dev/null 2>&1 && break
+            sleep 1
+          done
           curl -fsS http://localhost:8080/ | grep -qi "<div id=\"root\""
 
       - name: La cabecera CSP está presente
         run: curl -sI http://localhost:8080/ | grep -qi "content-security-policy"
+
+      # Lo que de verdad importa del frontend: que el proxy llegue al backend.
+      # El healthcheck anterior solo probaba index.html desde disco y daba
+      # "healthy" con el backend caído.
+      - name: El proxy /api/ alcanza al backend
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/health)
+          echo "GET /api/health via nginx -> $code"
+          test "$code" = "200" || test "$code" = "503"
 
       - name: Ninguna imagen corre como root
         run: |
