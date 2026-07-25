@@ -159,14 +159,20 @@ jobs:
 
       - name: Sin clave y sin modo anónimo, el backend se niega a arrancar
         run: |
+          # `timeout` es imprescindible: si la guarda se rompiera, uvicorn
+          # arrancaría y serviría para siempre, y el job se colgaría hasta el
+          # límite de GitHub en vez de fallar.
           set +e
-          docker run --rm sein-rag-backend:ci \
+          timeout 60 docker run --rm sein-rag-backend:ci \
             uvicorn rag.api.main:app --host 0.0.0.0 --port 8000 >out.log 2>&1
           code=$?
           set -e
           cat out.log
           if [ "$code" -eq 0 ]; then
             echo "FALLO: arrancó sin API key; la guarda no funciona"; exit 1
+          fi
+          if [ "$code" -eq 124 ]; then
+            echo "FALLO: siguió sirviendo sin API key hasta el timeout"; exit 1
           fi
           grep -q "RAG_API_KEY" out.log
 
