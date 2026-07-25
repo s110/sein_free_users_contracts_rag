@@ -189,15 +189,19 @@ jobs:
         run: |
           docker run -d --name web --network sein-ci -p 8080:80 sein-rag-frontend:ci
           for i in $(seq 1 20); do
-            curl -fsS --max-time 10 http://localhost:8080/ >/dev/null 2>&1 && break
+            code=$(curl -s --max-time 10 -o /tmp/spa.html \
+                   -w '%{http_code}' http://localhost:8080/ || echo 000)
+            echo "intento $i -> HTTP $code"
+            [ "$code" = "200" ] && break
             sleep 1
           done
-          if ! curl -fsS --max-time 10 http://localhost:8080/ >/tmp/spa.html; then
-            echo "FALLO: nginx no sirvió la SPA"
-            docker logs --tail 15 web 2>&1 | cut -c1-300 || true
+          echo "=== bytes servidos: $(wc -c </tmp/spa.html) ==="
+          head -c 400 /tmp/spa.html; echo
+          if ! grep -qi 'id="root"' /tmp/spa.html; then
+            echo "FALLO: nginx respondió pero no es la SPA construida"
+            docker logs --tail 10 web 2>&1 | cut -c1-200 || true
             exit 1
           fi
-          grep -qi "<div id=\"root\"" /tmp/spa.html
           echo "OK: la SPA se sirve"
 
       - name: La cabecera CSP está presente
