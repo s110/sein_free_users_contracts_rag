@@ -72,6 +72,11 @@ export default function App() {
 
       const controller = new AbortController();
       abortRef.current = controller;
+      // Si el stream se corta sin evento `end` (backend OOM-killed, timeout de
+      // nginx, frame corrupto), el mensaje se quedaba con streaming:true para
+      // siempre: cursor parpadeando, sin error y sin pie, como si la respuesta
+      // siguiera llegando.
+      let finished = false;
       try {
         await streamChat(q, history, filters, (ev: SseEvent) => {
           switch (ev.type) {
@@ -86,6 +91,7 @@ export default function App() {
               appendToken(ev.data.text);
               break;
             case "end":
+              finished = true;
               updateLast({
                 content: ev.data.answer,
                 sources: ev.data.sources,
@@ -97,10 +103,18 @@ export default function App() {
               setPanelSources(ev.data.sources);
               break;
             case "error":
+              finished = true;
               updateLast({ streaming: false, status: undefined, error: ev.data.message });
               break;
           }
         }, controller.signal);
+        if (!finished) {
+          updateLast({
+            streaming: false,
+            status: undefined,
+            error: "La conexión se cortó antes de terminar la respuesta. Vuelve a intentarlo.",
+          });
+        }
       } catch (e) {
         if ((e as Error).name !== "AbortError") {
           updateLast({ streaming: false, status: undefined, error: (e as Error).message });

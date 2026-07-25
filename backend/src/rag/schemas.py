@@ -54,10 +54,20 @@ class RetrievedChunk(BaseModel):
     source_url: str | None = None
 
 
+class HistoryMessage(BaseModel):
+    """Turno previo de la conversación. Acotado para que validar el cuerpo no
+    sea un vector de DoS: el cliente reenvía el historial completo en cada
+    pregunta y `list[dict]` sin límite permitía POSTear megabytes que pydantic
+    materializaba entero antes de que nadie lo truncara."""
+
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=8000)
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
-    history: list[dict] = Field(default_factory=list)  # [{role, content}]
-    filters: dict | None = None  # {"tipo": "contrato", "ruc_usuario_libre": "..."}
+    history: list[HistoryMessage] = Field(default_factory=list, max_length=50)
+    filters: dict[str, str] | None = Field(default=None)  # {"tipo": "contrato", ...}
 
 
 class SourceRef(BaseModel):

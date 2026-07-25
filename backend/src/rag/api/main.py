@@ -10,12 +10,15 @@ Eventos SSE de /api/chat:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import secrets
+import uuid
 from contextlib import asynccontextmanager
 
 import httpx
 import orjson
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from qdrant_client import QdrantClient
@@ -46,6 +49,9 @@ STEP_LABELS = {
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
+    # Falla al arrancar, no en la primera petición: una API sin clave y sin
+    # RAG_ALLOW_ANONYMOUS no debe llegar nunca a escuchar en un puerto.
+    settings.validate_runtime()
     client = QdrantClient(url=settings.qdrant_url, timeout=60)
     embedder = OllamaEmbedder(
         host=settings.ollama_host,
@@ -59,6 +65,7 @@ async def lifespan(app: FastAPI):
         dense_candidates=settings.dense_candidates,
         text_candidates=settings.text_candidates,
     )
+    _configure_cors(app, settings)
     app.state.settings = settings
     app.state.qdrant = client
     app.state.embedder = embedder
@@ -75,23 +82,38 @@ async def lifespan(app: FastAPI):
     client.close()
 
 
-app = FastAPI(title="SEIN Free Users Contracts RAG", version=__version__, lifespan=lifespan)
+def _configure_cors(app: FastAPI, settings: Settings) -> None:
+    """CORS según config. Se aplica en el lifespan, no en import time.
 
-_cors = get_settings().cors_origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[o.strip() for o in _cors.split(",")] if _cors != "*" else ["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    Antes `get_settings()` se llamaba al importar el módulo, lo que congelaba
+    la config y calentaba el `lru_cache` antes de que ningún test pudiera
+    parchear el entorno — motivo por el que este módulo estaba al 0% de
+    cobertura.
+    """
+    origins = settings.cors_origin_list
+    if not origins:
+        return  # mismo origen (nginx sirve front y API): no hace falta CORS
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "X-API-Key"],
+    )
+
+
+app = FastAPI(title="SEIN Free Users Contracts RAG", version=__version__, lifespan=lifespan)
 
 
 async def require_api_key(request: Request) -> None:
     settings: Settings = request.app.state.settings
     if not settings.api_key:
+        # Solo se llega aquí si validate_runtime() aceptó allow_anonymous.
         return
     provided = request.headers.get("x-api-key", "")
-    if provided != settings.api_key:
+    # compare_digest: la comparación con `!=` corta en el primer byte distinto
+    # y filtra la clave carácter a carácter ante un atacante que mida.
+    if not secrets.compare_digest(provided, settings.api_key):
         raise HTTPException(status_code=401, detail="API key inválida o ausente")
 
 
@@ -120,7 +142,18 @@ def _sources_from(docs: list[RetrievedChunk]) -> list[dict]:
 
 
 @app.get("/api/health")
-async def health(request: Request):
+async def health(request: Request, response: Response):
+    """Estado del servicio. Devuelve 503 si algo esencial no responde.
+
+    Antes siempre devolvía 200, así que el HEALTHCHECK del contenedor
+    (`curl -fsS`) daba OK con Ollama caído: Docker reportaba el backend sano,
+    `restart: unless-stopped` no se disparaba nunca, y la primera noticia del
+    incidente venía de un usuario.
+
+    Los detalles del fallo van al log, no al cuerpo: este endpoint no
+    requiere autenticación y las cadenas de excepción exponían la topología
+    interna (nombres DNS de contenedores, puertos, versiones de librerías).
+    """
     settings: Settings = request.app.state.settings
     out = {
         "status": "ok",
@@ -129,16 +162,17 @@ async def health(request: Request):
         "embeddings": settings.embedding_model,
     }
     try:
-        out["indexed_chunks"] = request.app.state.store.count()
+        out["indexed_chunks"] = await asyncio.to_thread(request.app.state.store.count)
         out["qdrant"] = "ok"
-    except Exception as e:  # noqa: BLE001
-        out["qdrant"] = f"error: {e}"
+    except Exception:  # noqa: BLE001
+        log.exception("Health: Qdrant no responde")
+        out["qdrant"] = "error"
         out["status"] = "degraded"
     try:
         async with httpx.AsyncClient(timeout=5) as c:
             r = await c.get(f"{settings.ollama_host}/api/tags")
             r.raise_for_status()
-            available = {m["name"] for m in r.json().get("models", [])}
+            available = {m.get("name", "") for m in r.json().get("models", [])}
             out["ollama"] = "ok"
             missing = [
                 m
@@ -148,23 +182,35 @@ async def health(request: Request):
             if missing:
                 out["missing_models"] = missing
                 out["status"] = "degraded"
-    except Exception as e:  # noqa: BLE001
-        out["ollama"] = f"error: {e}"
+    except Exception:  # noqa: BLE001
+        log.exception("Health: Ollama no responde")
+        out["ollama"] = "error"
         out["status"] = "degraded"
+
+    if out["status"] != "ok":
+        response.status_code = 503
     return out
 
 
 @app.get("/api/documents", dependencies=[Depends(require_api_key)])
 async def documents(request: Request):
     try:
-        docs = request.app.state.store.list_documents()
+        # list_documents pagina la colección entera de forma síncrona.
+        docs = await asyncio.to_thread(request.app.state.store.list_documents)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=f"Qdrant no disponible: {e}") from e
+        ref = uuid.uuid4().hex[:12]
+        log.exception("Fallo listando documentos (ref=%s)", ref)
+        raise HTTPException(
+            status_code=503, detail=f"Servicio de índice no disponible (ref {ref})"
+        ) from e
     return {"count": len(docs), "documents": docs}
 
 
-@app.get("/api/meta")
+@app.get("/api/meta", dependencies=[Depends(require_api_key)])
 async def meta(request: Request):
+    """Metadatos del despliegue. Detrás de la API key: `auth_required: false`
+    le decía a cualquier escáner que /api/chat y /api/documents están abiertos,
+    sin necesidad de probar."""
     settings: Settings = request.app.state.settings
     return {
         "version": __version__,
@@ -172,7 +218,6 @@ async def meta(request: Request):
         "llm": settings.llm_model,
         "embeddings": settings.embedding_model,
         "collection": settings.collection,
-        "auth_required": bool(settings.api_key),
     }
 
 
@@ -183,7 +228,9 @@ async def chat(request: Request, body: ChatRequest):
     async def event_stream():
         state_in = {
             "question": body.question,
-            "history": body.history,
+            # El grafo trabaja con dicts planos; el modelo pydantic solo
+            # existe para acotar y validar lo que entra por HTTP.
+            "history": [m.model_dump() for m in body.history],
             "user_filters": body.filters or None,
             "rewrites": 0,
         }
@@ -222,9 +269,13 @@ async def chat(request: Request, body: ChatRequest):
                     "sources": _sources_from(final.get("relevant_documents") or []),
                 },
             )
-        except Exception as e:  # noqa: BLE001
-            log.exception("Error en /api/chat")
-            yield _sse("error", {"message": f"Error interno del agente: {e}"})
+        except Exception:  # noqa: BLE001
+            ref = uuid.uuid4().hex[:12]
+            log.exception("Error en /api/chat (ref=%s)", ref)
+            yield _sse(
+                "error",
+                {"message": f"Error interno del agente. Referencia para soporte: {ref}"},
+            )
 
     return StreamingResponse(
         event_stream(),

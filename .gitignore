@@ -223,3 +223,10 @@ frontend/dist/
 data/vault/
 backend/eval/results/
 .DS_Store
+
+# Cobertura y auditoría
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+backend/requirements.txt
+frontend/coverage/

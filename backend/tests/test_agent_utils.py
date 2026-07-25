@@ -42,3 +42,36 @@ def test_format_history_truncates():
     history = [{"role": "user", "content": "x" * 1000}] * 20
     out = format_history(history)
     assert out.count("user:") == 8  # MAX_HISTORY_MESSAGES
+
+
+def test_format_history_truncates_content_too():
+    """El test anterior solo comprobaba el número de mensajes: borrar el
+    `[:500]` del contenido lo dejaba pasando igual, y un historial largo se
+    comía la ventana de contexto del modelo."""
+    history = [{"role": "user", "content": "x" * 1000}]
+    out = format_history(history)
+    assert "x" * 501 not in out
+    assert "x" * 500 in out
+
+
+def test_format_history_empty():
+    assert format_history([]) == "(sin historial)"
+
+
+def test_format_history_tolerates_missing_keys():
+    assert "?" in format_history([{}])
+
+
+def test_format_context_includes_section():
+    ctx = format_context([_chunk(section="Cláusula Tercera")])
+    assert "Cláusula Tercera" in ctx
+
+
+def test_format_context_single_page_has_no_range():
+    ctx = format_context([_chunk(page_start=3, page_end=3)])
+    assert "pág. 3" in ctx
+    assert "3-3" not in ctx
+
+
+def test_format_context_empty():
+    assert format_context([]) == ""

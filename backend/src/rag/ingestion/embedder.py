@@ -24,12 +24,16 @@ class OllamaEmbedder:
         batch_size: int = 16,
         timeout: float = 120.0,
         max_retries: int = 3,
+        *,
+        client: httpx.Client | None = None,
+        sleep=time.sleep,
     ) -> None:
         self.host = host.rstrip("/")
         self.model = model
         self.batch_size = batch_size
         self.max_retries = max_retries
-        self._client = httpx.Client(timeout=timeout)
+        self._client = client or httpx.Client(timeout=timeout)
+        self._sleep = sleep
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         out: list[list[float]] = []
@@ -64,6 +68,10 @@ class OllamaEmbedder:
                 return embeddings
             except (httpx.HTTPError, ValueError) as e:
                 last_error = e
+                if attempt == self.max_retries:
+                    # Dormir tras el último intento solo añadía 8s muertos a
+                    # cada fallo definitivo.
+                    break
                 wait = 2.0**attempt
                 log.warning(
                     "Embed batch falló (intento %d/%d): %s — retry en %.0fs",
@@ -72,7 +80,7 @@ class OllamaEmbedder:
                     e,
                     wait,
                 )
-                time.sleep(wait)
+                self._sleep(wait)
         raise RuntimeError(
             f"Embeddings fallaron tras {self.max_retries + 1} intentos"
         ) from last_error

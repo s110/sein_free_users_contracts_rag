@@ -22,7 +22,9 @@ class JsonFormatter(logging.Formatter):
         extra = getattr(record, "extra_fields", None)
         if isinstance(extra, dict):
             payload.update(extra)
-        return orjson.dumps(payload).decode()
+        # `default=str` evita que un campo no serializable haga que el
+        # formatter lance dentro del logging, en producción, en cada línea.
+        return orjson.dumps(payload, default=str).decode()
 
 
 def setup_logging(level: str = "INFO") -> None:

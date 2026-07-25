@@ -41,6 +41,15 @@ KEYWORD_FIELDS = [
 ]
 
 
+# Si una corrida borraría más de esta fracción del índice, se aborta la purga.
+MAX_PURGE_RATIO = 0.5
+
+
+def doc_id_for(path: Path, vault_root: Path) -> str:
+    """doc_id de un fichero sin necesidad de poder leerlo."""
+    return str(path.relative_to(vault_root).with_suffix(""))
+
+
 @dataclass
 class IngestStats:
     scanned: int = 0
@@ -49,33 +58,58 @@ class IngestStats:
     deleted_stale: int = 0
     failed: int = 0
     chunks_upserted: int = 0
+    purge_skipped: int = 0  # stale detectados pero NO borrados por las guardas
+
+    @property
+    def ok(self) -> bool:
+        """Una corrida es buena solo si nada falló y ninguna purga se abortó."""
+        return self.failed == 0 and self.purge_skipped == 0
 
 
 def ensure_collection(client: QdrantClient, name: str, dim: int) -> None:
-    if client.collection_exists(name):
-        return
-    client.create_collection(
-        collection_name=name,
-        vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
-    )
-    for f in KEYWORD_FIELDS:
-        client.create_payload_index(
+    """Crea la colección si falta y **siempre** reconcilia los índices.
+
+    Antes esto retornaba temprano cuando la colección ya existía, así que una
+    colección creada por una versión anterior (o a mano) se quedaba sin los
+    índices keyword ni el full-text. `HybridStore._text_search` fallaba,
+    `store.py` se comía la excepción con un WARNING, y el retrieval híbrido
+    degradaba en silencio a solo-denso para siempre.
+    """
+    if not client.collection_exists(name):
+        client.create_collection(
             collection_name=name,
-            field_name=f,
-            field_schema=models.PayloadSchemaType.KEYWORD,
+            vectors_config=models.VectorParams(size=dim, distance=models.Distance.COSINE),
         )
+        log.info("Colección '%s' creada (dim=%d, cosine)", name, dim)
+
+    ensure_payload_indexes(client, name)
+
+
+def ensure_payload_indexes(client: QdrantClient, name: str) -> None:
+    """Crea los índices de payload. Idempotente: recrear uno existente es no-op."""
+    for f in KEYWORD_FIELDS:
+        _create_index(client, name, f, models.PayloadSchemaType.KEYWORD)
     # Índice full-text sobre el texto: habilita búsqueda léxica (híbrida con densa)
-    client.create_payload_index(
-        collection_name=name,
-        field_name="text",
-        field_schema=models.TextIndexParams(
+    _create_index(
+        client,
+        name,
+        "text",
+        models.TextIndexParams(
             type=models.TextIndexType.TEXT,
             tokenizer=models.TokenizerType.MULTILINGUAL,
             min_token_len=2,
             lowercase=True,
         ),
     )
-    log.info("Colección '%s' creada (dim=%d, cosine)", name, dim)
+
+
+def _create_index(client: QdrantClient, collection: str, field: str, schema) -> None:
+    try:
+        client.create_payload_index(
+            collection_name=collection, field_name=field, field_schema=schema
+        )
+    except Exception as e:  # noqa: BLE001 — ya existente es el caso normal
+        log.debug("Índice '%s' ya presente o no creable: %s", field, e)
 
 
 def stored_hashes(client: QdrantClient, collection: str) -> dict[str, str]:
@@ -137,9 +171,8 @@ def upsert_chunks(
     client: QdrantClient,
     collection: str,
     chunks: list[Chunk],
-    embedder: OllamaEmbedder,
+    vectors: list[list[float]],
 ) -> None:
-    vectors = embedder.embed([c.text for c in chunks])
     points = [
         models.PointStruct(id=c.chunk_id, vector=v, payload=chunk_payload(c))
         for c, v in zip(chunks, vectors, strict=True)
@@ -162,11 +195,17 @@ def ingest_vault(
     chunk_size: int = 3200,
     chunk_overlap: int = 400,
     force: bool = False,
+    max_purge_ratio: float = MAX_PURGE_RATIO,
 ) -> IngestStats:
     stats = IngestStats()
     dim = embedder.dimension()
     ensure_collection(client, collection, dim)
-    existing = {} if force else stored_hashes(client, collection)
+    # `existing` se consulta SIEMPRE, también con --force: sin él, los chunks
+    # de una versión anterior del documento quedaban huérfanos en la colección
+    # (los ids son uuid5 del source_hash, así que los nuevos no los pisan) y el
+    # retrieval devolvía dos generaciones del mismo contrato como si fueran
+    # documentos distintos en contradicción.
+    existing = stored_hashes(client, collection)
 
     files = iter_vault(vault_dir)
     stats.scanned = len(files)
@@ -178,6 +217,10 @@ def ingest_vault(
         doc = load_document(path, vault_dir)
         if doc is None:
             stats.failed += 1
+            # El documento existe en el vault aunque no se haya podido leer:
+            # marcarlo como visto evita que la purga de stale lo borre del
+            # índice por un EIO transitorio en un montaje de red.
+            seen_doc_ids.add(doc_id_for(path, vault_dir))
             continue
         seen_doc_ids.add(doc.doc_id)
 
@@ -186,8 +229,6 @@ def ingest_vault(
             continue
 
         try:
-            if doc.doc_id in existing:
-                delete_document(client, collection, doc.doc_id)
             chunks = chunk_document(
                 doc.doc_id, doc.body, doc.meta, max_chars=chunk_size, overlap_chars=chunk_overlap
             )
@@ -195,7 +236,14 @@ def ingest_vault(
                 log.warning("Sin chunks tras el chunking, se salta: %s", doc.doc_id)
                 stats.failed += 1
                 continue
-            upsert_chunks(client, collection, chunks, embedder)
+            # Embeber ANTES de borrar: el borrado y el upsert no son atómicos,
+            # y si el embedder fallaba en medio (Ollama sin memoria) el
+            # documento desaparecía del índice en su versión vieja y en la
+            # nueva a la vez.
+            vectors = embedder.embed([c.text for c in chunks])
+            if doc.doc_id in existing:
+                delete_document(client, collection, doc.doc_id)
+            upsert_chunks(client, collection, chunks, vectors)
             stats.indexed += 1
             stats.chunks_upserted += len(chunks)
             write_manifest_line(
@@ -223,10 +271,52 @@ def ingest_vault(
                 },
             )
 
-    # Documentos borrados del vault → fuera del índice (el índice refleja el vault)
-    for stale_doc_id in set(existing) - seen_doc_ids:
+    stale = set(existing) - seen_doc_ids
+    _purge_stale(client, collection, stale, existing, stats, files, max_purge_ratio)
+    return stats
+
+
+def _purge_stale(
+    client: QdrantClient,
+    collection: str,
+    stale: set[str],
+    existing: dict[str, str],
+    stats: IngestStats,
+    files: list[Path],
+    max_purge_ratio: float,
+) -> None:
+    """Purga documentos que ya no están en el vault, con dos frenos de mano.
+
+    Sin ellos, un `VAULT_DIR` mal montado (compose crea el directorio vacío,
+    así que `--vault` pasaba la validación) hacía `iter_vault -> []`, y el
+    bucle borraba **toda** la colección reportando éxito con código 0.
+    """
+    if not stale:
+        return
+
+    if not files:
+        stats.purge_skipped = len(stale)
+        log.error(
+            "El vault no tiene documentos pero el índice tiene %d: "
+            "se aborta la purga (¿VAULT_DIR mal montado?)",
+            len(stale),
+        )
+        return
+
+    ratio = len(stale) / max(len(existing), 1)
+    if ratio > max_purge_ratio:
+        stats.purge_skipped = len(stale)
+        log.error(
+            "La purga eliminaría %d de %d documentos (%.0f%% > %.0f%% permitido): se aborta. "
+            "Reingesta con --allow-purge si el borrado es intencional.",
+            len(stale),
+            len(existing),
+            ratio * 100,
+            max_purge_ratio * 100,
+        )
+        return
+
+    for stale_doc_id in sorted(stale):
         delete_document(client, collection, stale_doc_id)
         stats.deleted_stale += 1
         log.info("Documento removido del vault, purgado del índice: %s", stale_doc_id)
-
-    return stats

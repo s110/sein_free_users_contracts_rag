@@ -33,7 +33,7 @@ from rag.ingestion.embedder import OllamaEmbedder  # noqa: E402
 from rag.retrieval.store import HybridStore  # noqa: E402
 
 
-async def run(golden_path: Path) -> int:
+async def run(golden_path: Path, min_hit_rate: float | None, min_grounded: float | None) -> int:
     settings = get_settings()
     client = QdrantClient(url=settings.qdrant_url, timeout=60)
     embedder = OllamaEmbedder(host=settings.ollama_host, model=settings.embedding_model)
@@ -88,14 +88,41 @@ async def run(golden_path: Path) -> int:
     print(f"\n== Resultados ({out_file}) ==")
     print(json.dumps(header, indent=2, ensure_ascii=False))
     embedder.close()
-    return 0
+    client.close()  # antes solo se cerraba el embedder
+
+    code = 0
+    hit_rate = header["retrieval_hit_rate"]
+    grounded_rate = header["grounded_rate"]
+    if min_hit_rate is not None:
+        if hit_rate is None:
+            print("FALLO: ningún caso del golden set tiene expected_source_file")
+            code = 1
+        elif hit_rate < min_hit_rate:
+            print(f"FALLO: hit-rate {hit_rate} < umbral {min_hit_rate}")
+            code = 1
+    if min_grounded is not None and (grounded_rate is None or grounded_rate < min_grounded):
+        print(f"FALLO: groundedness {grounded_rate} < umbral {min_grounded}")
+        code = 1
+    return code
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--golden", type=Path, default=Path(__file__).parent / "golden.jsonl")
+    parser.add_argument(
+        "--min-hit-rate",
+        type=float,
+        default=None,
+        help="Sale con 1 si el hit-rate de retrieval queda por debajo",
+    )
+    parser.add_argument(
+        "--min-grounded",
+        type=float,
+        default=None,
+        help="Sale con 1 si la tasa de respuestas verificadas queda por debajo",
+    )
     args = parser.parse_args()
-    return asyncio.run(run(args.golden))
+    return asyncio.run(run(args.golden, args.min_hit_rate, args.min_grounded))
 
 
 if __name__ == "__main__":
