@@ -41,16 +41,27 @@ la suspensión (`sudo pmset -a sleep 0 displaysleep 10`).
 
 ```bash
 cp .env.example .env
-# Genera y define la API key (obligatoria si expones a internet):
+# Genera y define la API key:
 echo "RAG_API_KEY=$(openssl rand -hex 24)" >> .env
 ```
 
-- La API key protege `POST /api/chat` y `GET /api/documents`. Los usuarios
-  la ingresan una vez en el engranaje ⚙ de la UI (queda en su navegador).
-- nginx aplica rate limit: 10 consultas/min por IP al chat (cada consulta
-  ocupa el LLM decenas de segundos; esto protege al Mac mini de abuso).
-- Qdrant y el backend solo escuchan en `127.0.0.1` del host; únicamente
-  nginx (frontend) es alcanzable desde el túnel.
+- **El backend se niega a arrancar sin `RAG_API_KEY`.** Si de verdad quieres
+  la API abierta (LAN de confianza), hay que pedirlo explícitamente con
+  `RAG_ALLOW_ANONYMOUS=true`. No hay forma de exponer esto sin auth por
+  descuido.
+- La API key protege `POST /api/chat`, `GET /api/documents` y `GET /api/meta`.
+  Los usuarios la ingresan una vez en el engranaje ⚙ de la UI (queda en su
+  navegador). La comparación es en tiempo constante.
+- nginx aplica rate limit: 10 consultas/min **por IP real del cliente**
+  (`CF-Connecting-IP`); sin eso, detrás del túnel todo internet compartía un
+  único cubo de 10/min y un solo atacante podía dejar fuera a todos.
+- nginx envía CSP, `X-Frame-Options: DENY` y `nosniff`, y limita el cuerpo a 1 MB.
+- Qdrant, el backend **y nginx** escuchan solo en `127.0.0.1` del host: el
+  único camino de entrada es el túnel. Para exponer nginx en la LAN hay que
+  poner `FRONTEND_BIND=0.0.0.0` a propósito.
+- El token del túnel viaja por entorno (`TUNNEL_TOKEN`), no como argumento de
+  `command`: como argumento quedaba en el `Cmd` del contenedor, legible con
+  `docker inspect` y en texto plano en el estado de Docker.
 
 ## Paso 2 — Cloudflare Tunnel
 

@@ -4,24 +4,31 @@ version = "1.0.0"
 description = "RAG agéntico local para contratos de usuarios libres del SEIN (Osinergmin)"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
-    "pydantic-settings>=2.6",
-    "pyyaml>=6.0",
-    "qdrant-client>=1.12",
-    "langgraph>=0.2.60",
-    "langchain-core>=0.3.25",
-    "langchain-ollama>=0.2.2",
-    "httpx>=0.27",
-    "orjson>=3.10",
+    "fastapi>=0.140,<1",
+    "uvicorn[standard]>=0.51,<1",
+    "pydantic>=2.13,<3",
+    "pydantic-settings>=2.13,<3",
+    "pyyaml>=6.0,<7",
+    "qdrant-client>=1.18,<2",
+    # Los mínimos declarados eran pre-1.0 (langgraph>=0.2.60, langchain-core
+    # >=0.3.25) mientras el lock ya resolvía post-1.0: cualquier `uv lock`
+    # podía traer un major arbitrario. `astream_events(version="v2")` es
+    # justamente el API cuya forma cambia entre majors.
+    "langgraph>=1.2,<2",
+    "langchain-core>=1.5,<2",
+    "langchain-ollama>=1.1,<2",
+    "httpx>=0.28,<1",
+    "orjson>=3.10,<4",
 ]
 
-[project.optional-dependencies]
+# PEP 735: mismo idioma que ocr_pdf_markdown y osinergmin_scraper, para que
+# `uv sync --locked --group dev` funcione igual en los tres repos.
+[dependency-groups]
 dev = [
-    "pytest>=8.3",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.8",
+    "pytest>=9.1",
+    "pytest-asyncio>=1.3",
+    "pytest-cov>=7.0",
+    "ruff>=0.16",
 ]
 
 [project.scripts]
@@ -44,3 +51,8 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-q --cov=rag --cov-report=term-missing --cov-fail-under=85"
+
+[tool.coverage.run]
+branch = true
+source = ["src/rag"]

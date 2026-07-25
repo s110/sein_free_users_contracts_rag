@@ -99,6 +99,28 @@ def _hard_split(text: str, max_chars: int, overlap: int) -> list[str]:
     ]
 
 
+class ChunkingError(ValueError):
+    """Parámetros de chunking incoherentes."""
+
+
+def _validate(max_chars: int, overlap_chars: int) -> None:
+    """El overlap tiene que ser estrictamente menor que el tamaño de chunk.
+
+    Con `overlap >= max_chars`, `_hard_split` calcula `step = max(max-ov, 1)`
+    = 1 y trocea el texto carácter a carácter: un contrato de 200KB con una
+    tabla grande producía 200.000 chunks y 12.500 llamadas a /api/embed.
+    """
+    if max_chars < 1:
+        raise ChunkingError(f"chunk_size_chars debe ser >= 1, no {max_chars}")
+    if overlap_chars < 0:
+        raise ChunkingError(f"chunk_overlap_chars no puede ser negativo ({overlap_chars})")
+    if overlap_chars >= max_chars:
+        raise ChunkingError(
+            f"chunk_overlap_chars ({overlap_chars}) debe ser menor que "
+            f"chunk_size_chars ({max_chars})"
+        )
+
+
 def chunk_document(
     doc_id: str,
     body: str,
@@ -106,6 +128,7 @@ def chunk_document(
     max_chars: int = 3200,
     overlap_chars: int = 400,
 ) -> list[Chunk]:
+    _validate(max_chars, overlap_chars)
     packer = _Packer(max_chars=max_chars, overlap_chars=overlap_chars)
     section: str | None = None
     page: int | None = None

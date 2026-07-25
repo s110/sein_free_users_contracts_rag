@@ -15,14 +15,15 @@ Diseño para modelos locales chicos (4B):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import orjson
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 
 from ..config import Settings
+from ..llm import build_llm
 from ..retrieval.store import HybridStore
 from ..schemas import RetrievedChunk
 from . import prompts
@@ -68,6 +69,26 @@ def format_context(docs: list[RetrievedChunk]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def truncate_context(docs: list[RetrievedChunk], budget: int) -> str:
+    """Contexto para el verificador, recortando *cada* fuente por igual.
+
+    Antes se hacía `format_context(docs)[:12000]`, un corte plano al final:
+    con top_k=6 y chunks de 3200 caracteres, las fuentes [5] y [6] quedaban
+    fuera enteras. El verificador veía una respuesta que citaba hechos
+    ausentes de su contexto y devolvía `grounded: false`, así que la insignia
+    "⚠ Verificación no concluyente" aparecía justamente en las respuestas
+    bien citadas de varias fuentes.
+    """
+    if not docs:
+        return ""
+    per_doc = max(budget // len(docs), 200)
+    trimmed = [
+        d.model_copy(update={"text": d.text[:per_doc]}) if len(d.text) > per_doc else d
+        for d in docs
+    ]
+    return format_context(trimmed)
+
+
 def format_history(history: list[dict]) -> str:
     recent = history[-MAX_HISTORY_MESSAGES:]
     if not recent:
@@ -76,22 +97,24 @@ def format_history(history: list[dict]) -> str:
 
 
 class ContractsAgent:
-    def __init__(self, settings: Settings, store: HybridStore) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        store: HybridStore,
+        *,
+        llm_json=None,
+        llm_generate=None,
+    ) -> None:
+        """Los modelos son inyectables: sin esa costura, ningún nodo del grafo
+        podía testearse sin un Ollama vivo (y ninguno lo estaba)."""
         self.settings = settings
         self.store = store
-        self.llm_json = ChatOllama(
-            base_url=settings.ollama_host,
-            model=settings.llm_model,
-            temperature=0.0,
-            num_ctx=settings.llm_num_ctx,
-            format="json",
+        self.llm_json = (
+            llm_json
+            if llm_json is not None
+            else build_llm(settings, json_mode=True, temperature=0.0)
         )
-        self.llm_generate = ChatOllama(
-            base_url=settings.ollama_host,
-            model=settings.llm_model,
-            temperature=settings.llm_temperature,
-            num_ctx=settings.llm_num_ctx,
-        )
+        self.llm_generate = llm_generate if llm_generate is not None else build_llm(settings)
         self.graph = self._build()
 
     # --- Nodos ---
@@ -114,7 +137,9 @@ class ContractsAgent:
         filters = {k: v for k, v in extracted.items() if v}
         # Los filtros explícitos del usuario (UI) mandan sobre los extraídos
         filters.update(state.get("user_filters") or {})
-        log.info("analyze: query='%s' filtros=%s", search_query[:100], filters)
+        # Ni la pregunta ni los RUC van al log: `docker logs` acababa siendo
+        # un registro consultable de qué analista preguntó por qué empresa.
+        log.info("analyze: %d filtros extraídos", len(filters))
         return {
             "search_query": search_query,
             "filters": filters,
@@ -122,7 +147,12 @@ class ContractsAgent:
         }
 
     async def retrieve(self, state: AgentState) -> dict:
-        docs = self.store.search(
+        # `HybridStore.search` es síncrono (httpx.Client + qdrant_client) y se
+        # llamaba directamente desde este `async def`: una llamada lenta a
+        # Ollama bloqueaba el event loop entero, congelando los SSE de todos
+        # los demás usuarios y el propio /api/health.
+        docs = await asyncio.to_thread(
+            self.store.search,
             state["search_query"],
             top_k=self.settings.top_k,
             filters=state.get("filters") or None,
@@ -130,8 +160,10 @@ class ContractsAgent:
         # Si el filtro extraído automáticamente dejó 0 resultados, reintenta sin él
         # (un RUC mal extraído no debe dejar al usuario sin respuesta)
         if not docs and state.get("filters") and not state.get("user_filters"):
-            log.info("retrieve: 0 docs con filtros %s, reintento sin filtros", state["filters"])
-            docs = self.store.search(state["search_query"], top_k=self.settings.top_k)
+            log.info("retrieve: 0 docs con filtros, reintento sin filtros")
+            docs = await asyncio.to_thread(
+                self.store.search, state["search_query"], top_k=self.settings.top_k
+            )
         return {"documents": docs}
 
     async def grade(self, state: AgentState) -> dict:
@@ -168,7 +200,7 @@ class ContractsAgent:
         )
         data = parse_json_reply(str(reply.content))
         new_query = str(data.get("search_query") or "").strip() or state["search_query"]
-        log.info("rewrite #%d: '%s'", state.get("rewrites", 0) + 1, new_query[:100])
+        log.info("rewrite #%d", state.get("rewrites", 0) + 1)
         return {"search_query": new_query, "rewrites": state.get("rewrites", 0) + 1}
 
     async def generate(self, state: AgentState) -> dict:
@@ -191,7 +223,9 @@ class ContractsAgent:
                 [
                     HumanMessage(
                         content=prompts.GROUNDEDNESS_PROMPT.format(
-                            context=format_context(state["relevant_documents"])[:12000],
+                            context=truncate_context(
+                                state["relevant_documents"], self.settings.verify_context_chars
+                            ),
                             answer=state["answer"],
                         )
                     )

@@ -12,12 +12,16 @@ name: sein-rag
 
 services:
   qdrant:
-    image: qdrant/qdrant:v1.13.4
+    image: qdrant/qdrant:v1.18.3@sha256:0bd98fa7977f1e75694779359ca4e212822e5a71334e28421182f72f209d5286
     restart: unless-stopped
     ports:
       - "127.0.0.1:6333:6333"   # solo loopback: la API pública pasa por nginx
     volumes:
       - qdrant_data:/qdrant/storage
+    # Techos explícitos: el Mac Mini de 16GB corre además Ollama nativo y el
+    # pipeline OCR. Sin límites, el OOM killer elegía víctima al azar y lo
+    # más probable era perder el índice.
+    mem_limit: ${QDRANT_MEM_LIMIT:-3g}
     healthcheck:
       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 15s
@@ -34,6 +38,10 @@ services:
       RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-bge-m3}
       RAG_COLLECTION: ${RAG_COLLECTION:-sein_contracts}
       RAG_API_KEY: ${RAG_API_KEY:-}
+      # Sin clave, el backend se niega a arrancar salvo que se pida
+      # explícitamente el modo anónimo.
+      RAG_ALLOW_ANONYMOUS: ${RAG_ALLOW_ANONYMOUS:-false}
+      RAG_CORS_ORIGINS: ${RAG_CORS_ORIGINS:-}
       RAG_LOG_LEVEL: ${RAG_LOG_LEVEL:-INFO}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # Linux; en macOS ya existe
@@ -42,6 +50,7 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"   # debug local; el tráfico real entra por nginx
+    mem_limit: ${BACKEND_MEM_LIMIT:-1g}
 
   frontend:
     build: ./frontend
@@ -49,7 +58,13 @@ services:
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      # Solo loopback por defecto: nginx proxea /api/ al backend, así que
+      # publicarlo en 0.0.0.0 ponía toda la API al alcance de cualquiera en
+      # la LAN, saltándose por completo el túnel de Cloudflare y sus
+      # políticas de acceso. Para exponerlo en la red local hay que pedirlo:
+      #   FRONTEND_BIND=0.0.0.0 docker compose up -d
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-8080}:80"
+    mem_limit: ${FRONTEND_MEM_LIMIT:-256m}
 
   # --- Ingesta one-shot (idempotente, segura de re-correr) ---
   ingest:
@@ -75,7 +90,7 @@ services:
 
   # --- Solo Linux: Ollama en contenedor ---
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.4
     profiles: ["bundled-ollama"]
     restart: unless-stopped
     volumes:
@@ -85,10 +100,17 @@ services:
 
   # --- Exposición pública sin abrir puertos: Cloudflare Tunnel ---
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.7.3@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
     profiles: ["public"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    # El token va por entorno, no en `command`: como argumento acababa en el
+    # array Cmd del contenedor, visible con `docker inspect`, en `docker ps
+    # --no-trunc` y en texto plano en config.v2.json. Quien lo leyera podía
+    # levantar su propio cloudflared para el mismo hostname.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?define CLOUDFLARE_TUNNEL_TOKEN en .env}
+    mem_limit: ${TUNNEL_MEM_LIMIT:-256m}
     depends_on:
       - frontend
 

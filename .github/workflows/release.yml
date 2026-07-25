@@ -1,0 +1,104 @@
+name: Release
+
+# Se dispara al empujar un tag vN.N.N. Antes no había ninguna automatización
+# de release: nada tageaba, verificaba que las tres versiones del proyecto
+# (backend, frontend y tag) coincidieran, ni construía artefactos.
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.8.17"
+
+jobs:
+  verify:
+    name: Verificar el tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@94527f2e458b27549849d47d273a16bec83a01e9 # v7
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: El tag coincide con backend y frontend
+        id: v
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          back=$(cd backend && uv run python -c \
+            "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          front=$(node -p "require('./frontend/package.json').version")
+          echo "tag=$tag backend=$back frontend=$front"
+          if [ "$tag" != "$back" ] || [ "$tag" != "$front" ]; then
+            echo "Las versiones no coinciden"; exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      # Un tag no debe publicarse si la suite no pasa en ese commit exacto.
+      - name: Backend
+        working-directory: backend
+        run: |
+          uv sync --locked --group dev
+          uv run ruff check src tests eval
+          uv run ruff format --check src tests eval
+          uv run pytest
+
+      - name: Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm run coverage
+          npm run build
+
+      - name: Construir el wheel del backend
+        working-directory: backend
+        run: uv build
+
+      - name: Empaquetar los estáticos del frontend
+        run: tar -czf frontend-dist.tar.gz -C frontend dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dist
+          path: |
+            backend/dist/
+            frontend-dist.tar.gz
+          retention-days: 30
+
+  release:
+    name: Publicar la release
+    runs-on: ubuntu-latest
+    needs: [verify]
+    permissions:
+      contents: write   # único job que escribe: crear la release y subir assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: dist
+          path: dist
+      - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        with:
+          name: v${{ needs.verify.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/backend/dist/*
+            dist/frontend-dist.tar.gz

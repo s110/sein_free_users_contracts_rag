@@ -1,3 +1,5 @@
+import pytest
+
 from rag.ingestion.chunker import chunk_document, chunk_id_for
 from rag.schemas import DocumentMeta
 
@@ -63,3 +65,42 @@ def test_chunk_indices_are_sequential():
 
 def test_empty_body_returns_no_chunks():
     assert chunk_document("d", "\n\n  \n", META) == []
+
+
+def test_overlap_igual_al_tamano_se_rechaza():
+    """`overlap >= max_chars` hacía `step = 1` en `_hard_split`: un contrato
+    de 200KB con una tabla grande producía 200.000 chunks y 12.500 llamadas a
+    /api/embed por un solo documento."""
+    from rag.ingestion.chunker import ChunkingError, chunk_document
+    from rag.schemas import DocumentMeta
+
+    meta = DocumentMeta(source_file="a.pdf", source_hash="h")
+    with pytest.raises(ChunkingError, match="menor"):
+        chunk_document("d", "texto", meta, max_chars=400, overlap_chars=400)
+
+
+def test_overlap_mayor_que_el_tamano_se_rechaza():
+    from rag.ingestion.chunker import ChunkingError, chunk_document
+    from rag.schemas import DocumentMeta
+
+    meta = DocumentMeta(source_file="a.pdf", source_hash="h")
+    with pytest.raises(ChunkingError):
+        chunk_document("d", "texto", meta, max_chars=100, overlap_chars=500)
+
+
+def test_overlap_negativo_se_rechaza():
+    from rag.ingestion.chunker import ChunkingError, chunk_document
+    from rag.schemas import DocumentMeta
+
+    meta = DocumentMeta(source_file="a.pdf", source_hash="h")
+    with pytest.raises(ChunkingError):
+        chunk_document("d", "texto", meta, max_chars=100, overlap_chars=-1)
+
+
+def test_una_tabla_gigante_produce_un_numero_razonable_de_chunks():
+    from rag.ingestion.chunker import chunk_document
+    from rag.schemas import DocumentMeta
+
+    meta = DocumentMeta(source_file="a.pdf", source_hash="h")
+    chunks = chunk_document("d", "T" * 200_000, meta, max_chars=3200, overlap_chars=400)
+    assert len(chunks) < 100

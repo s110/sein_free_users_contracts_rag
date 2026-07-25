@@ -223,3 +223,15 @@ frontend/dist/
 data/vault/
 backend/eval/results/
 .DS_Store
+
+# Cobertura y auditoría
+backend/.coverage
+backend/coverage.xml
+backend/htmlcov/
+backend/requirements.txt
+frontend/coverage/
+
+# Artefactos de build (uv build)
+backend/dist/
+dist/
+frontend-dist.tar.gz
