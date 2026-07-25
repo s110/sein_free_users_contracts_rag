@@ -230,3 +230,8 @@ backend/coverage.xml
 backend/htmlcov/
 backend/requirements.txt
 frontend/coverage/
+
+# Artefactos de build (uv build)
+backend/dist/
+dist/
+frontend-dist.tar.gz
