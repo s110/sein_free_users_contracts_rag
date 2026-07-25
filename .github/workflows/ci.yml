@@ -192,7 +192,13 @@ jobs:
             curl -fsS --max-time 10 http://localhost:8080/ >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS --max-time 10 http://localhost:8080/ | grep -qi "<div id=\"root\""
+          if ! curl -fsS --max-time 10 http://localhost:8080/ >/tmp/spa.html; then
+            echo "FALLO: nginx no sirvió la SPA"
+            docker logs --tail 15 web 2>&1 | cut -c1-300 || true
+            exit 1
+          fi
+          grep -qi "<div id=\"root\"" /tmp/spa.html
+          echo "OK: la SPA se sirve"
 
       - name: La cabecera CSP está presente
         run: curl -sI --max-time 10 http://localhost:8080/ | grep -qi "content-security-policy"
@@ -227,6 +233,14 @@ jobs:
             echo "$img: $((size / 1024 / 1024)) MB" | tee -a "$GITHUB_STEP_SUMMARY"
           done
 
-      - name: Logs al fallar
+      # Diagnóstico acotado: volcar los logs enteros llenaba la salida de
+      # trazas JSON de varios KB por línea y enterraba el error real.
+      - name: Diagnóstico al fallar
         if: failure()
-        run: docker logs api || true; docker logs web || true
+        run: |
+          echo "=== contenedores ==="
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
+          echo "=== backend (api), últimas 15 líneas ==="
+          docker logs --tail 15 api 2>&1 | cut -c1-300 || true
+          echo "=== frontend (web), últimas 15 líneas ==="
+          docker logs --tail 15 web 2>&1 | cut -c1-300 || true
