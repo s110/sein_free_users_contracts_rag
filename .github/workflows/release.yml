@@ -6,6 +6,10 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Permite cortar la release desde la rama por defecto sin empujar un tag a
+  # mano: el propio workflow lo crea. Útil cuando el entorno desde el que se
+  # trabaja no puede empujar tags.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,18 +41,23 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: El tag coincide con backend y frontend
+      - name: Backend y frontend declaran la misma versión
         id: v
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          back=$(cd backend && uv run python -c \
+          back=$(cd backend && python3 -c \
             "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
           front=$(node -p "require('./frontend/package.json').version")
-          echo "tag=$tag backend=$back frontend=$front"
-          if [ "$tag" != "$back" ] || [ "$tag" != "$front" ]; then
-            echo "Las versiones no coinciden"; exit 1
+          echo "backend=$back frontend=$front"
+          if [ "$back" != "$front" ]; then
+            echo "backend y frontend declaran versiones distintas"; exit 1
           fi
-          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$back" ]; then
+              echo "El tag ($tag) no coincide con el proyecto ($back)"; exit 1
+            fi
+          fi
+          echo "version=$back" >> "$GITHUB_OUTPUT"
 
       # Un tag no debe publicarse si la suite no pasa en ese commit exacto.
       - name: Backend
@@ -97,6 +106,7 @@ jobs:
           path: dist
       - uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
         with:
+          tag_name: v${{ needs.verify.outputs.version }}
           name: v${{ needs.verify.outputs.version }}
           generate_release_notes: true
           files: |
