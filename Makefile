@@ -9,8 +9,8 @@ setup: ## Instala deps de backend (uv) y frontend (npm)
 	cd frontend && npm ci
 
 models: ## Descarga los modelos locales en Ollama
-	ollama pull qwen3:4b
-	ollama pull bge-m3
+	ollama pull qwen3.5:4b
+	ollama pull qwen3-embedding:0.6b
 
 lint: ## Ruff (backend) + ESLint y typecheck (frontend)
 	cd backend && uv run ruff check src tests eval && uv run ruff format --check src tests eval

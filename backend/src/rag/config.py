@@ -27,8 +27,12 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
 
     # --- Modelos (Mac Mini M4 16GB: LLM 4B + embeddings 0.6B caben juntos) ---
-    llm_model: str = "qwen3:4b"
-    embedding_model: str = "bge-m3"
+    # Reevaluados en ago 2026: qwen3.5:4b sucede a qwen3:4b (201 idiomas,
+    # 256K ctx, mismo footprint) y qwen3-embedding:0.6b rinde mejor que
+    # bge-m3 en MTEB multilingüe con la mitad de RAM. La dimensión del
+    # índice se autodetecta, pero cambiar de embedder exige reindexar.
+    llm_model: str = "qwen3.5:4b"
+    embedding_model: str = "qwen3-embedding:0.6b"
     llm_temperature: float = 0.1
     llm_num_ctx: int = 8192
 
@@ -36,7 +40,7 @@ class Settings(BaseSettings):
     collection: str = "sein_contracts"
     vault_dir: str = "/data/vault"
     manifest_path: str = "/data/index/ingest_manifest.jsonl"
-    chunk_size_chars: int = 3200  # ~800 tokens para bge-m3
+    chunk_size_chars: int = 3200  # ~800 tokens; holgado para embedders de 32K
     chunk_overlap_chars: int = 400
     embed_batch_size: int = 16
 
@@ -61,6 +65,21 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     request_timeout: int = 300
 
+    # --- Chat público con cuota diaria por IP ---
+    # Con public_chat=true, /api/chat acepta peticiones SIN clave aunque
+    # RAG_API_KEY esté definida, sujetas a una cuota diaria por IP (el LLM es
+    # el recurso caro: un 4B local atiende en serie). Una API key válida
+    # salta la cuota — uso propio ilimitado. /api/documents y /api/meta
+    # siguen exigiendo la clave siempre: publican RUC de usuarios libres.
+    public_chat: bool = False
+    chat_daily_limit: int = 5
+    quota_db_path: str = "/data/quota/quota.sqlite3"
+    # Cabecera de la que se toma la IP del cliente. nginx la reconstruye con
+    # real_ip desde CF-Connecting-IP y la reenvía como X-Real-IP; el backend
+    # solo es alcanzable desde la red interna de compose, así que confiar en
+    # ella no abre spoofing desde fuera.
+    trusted_ip_header: str = "x-real-ip"
+
     # --- Observabilidad ---
     log_level: str = "INFO"
 
@@ -84,6 +103,16 @@ class Settings(BaseSettings):
             log.warning(
                 "RAG_CORS_ORIGINS='*' con API key definida: cualquier página puede "
                 "usar la clave de un usuario autenticado desde su navegador."
+            )
+        if self.public_chat and self.chat_daily_limit < 1:
+            raise ConfigError(
+                f"RAG_CHAT_DAILY_LIMIT ({self.chat_daily_limit}) debe ser >= 1 "
+                "con RAG_PUBLIC_CHAT=true"
+            )
+        if self.public_chat and not self.api_key:
+            log.warning(
+                "RAG_PUBLIC_CHAT=true sin RAG_API_KEY: nadie (ni tú) puede "
+                "saltarse la cuota diaria, y /api/documents queda inaccesible."
             )
 
 

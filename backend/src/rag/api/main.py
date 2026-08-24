@@ -31,6 +31,7 @@ from ..ingestion.embedder import OllamaEmbedder
 from ..logging_setup import setup_logging
 from ..retrieval.store import HybridStore
 from ..schemas import ChatRequest, RetrievedChunk, SourceRef
+from .quota import DailyQuota
 
 log = logging.getLogger("rag.api")
 
@@ -71,6 +72,11 @@ async def lifespan(app: FastAPI):
     app.state.embedder = embedder
     app.state.store = store
     app.state.agent = ContractsAgent(settings, store)
+    app.state.quota = (
+        DailyQuota(settings.quota_db_path, settings.chat_daily_limit)
+        if settings.public_chat
+        else None
+    )
     log.info(
         "API lista: llm=%s embed=%s collection=%s",
         settings.llm_model,
@@ -78,6 +84,8 @@ async def lifespan(app: FastAPI):
         settings.collection,
     )
     yield
+    if app.state.quota is not None:
+        app.state.quota.close()
     embedder.close()
     client.close()
 
@@ -105,16 +113,62 @@ def _configure_cors(app: FastAPI, settings: Settings) -> None:
 app = FastAPI(title="SEIN Free Users Contracts RAG", version=__version__, lifespan=lifespan)
 
 
+def _has_valid_api_key(request: Request) -> bool:
+    settings: Settings = request.app.state.settings
+    if not settings.api_key:
+        return False
+    provided = request.headers.get("x-api-key", "")
+    # compare_digest: la comparación con `!=` corta en el primer byte distinto
+    # y filtra la clave carácter a carácter ante un atacante que mida.
+    return secrets.compare_digest(provided, settings.api_key)
+
+
 async def require_api_key(request: Request) -> None:
     settings: Settings = request.app.state.settings
     if not settings.api_key:
         # Solo se llega aquí si validate_runtime() aceptó allow_anonymous.
         return
-    provided = request.headers.get("x-api-key", "")
-    # compare_digest: la comparación con `!=` corta en el primer byte distinto
-    # y filtra la clave carácter a carácter ante un atacante que mida.
-    if not secrets.compare_digest(provided, settings.api_key):
+    if not _has_valid_api_key(request):
         raise HTTPException(status_code=401, detail="API key inválida o ausente")
+
+
+def _client_ip(request: Request) -> str:
+    settings: Settings = request.app.state.settings
+    header_ip = request.headers.get(settings.trusted_ip_header, "").strip()
+    if header_ip:
+        return header_ip
+    return request.client.host if request.client else "desconocida"
+
+
+async def chat_access(request: Request) -> None:
+    """Acceso a /api/chat: clave válida = ilimitado; sin clave, cuota por IP.
+
+    Con RAG_PUBLIC_CHAT=false se comporta exactamente como require_api_key
+    (el modo histórico). La cuota vive en el backend y no en nginx porque
+    nginx solo sabe limitar ráfagas por minuto; el costo real es el total de
+    preguntas del día contra un LLM que atiende en serie.
+    """
+    settings: Settings = request.app.state.settings
+    if _has_valid_api_key(request):
+        request.state.quota_remaining = None  # ilimitado
+        return
+    if not settings.public_chat:
+        await require_api_key(request)
+        request.state.quota_remaining = None
+        return
+    quota: DailyQuota = request.app.state.quota
+    ip = _client_ip(request)
+    allowed, remaining = await asyncio.to_thread(quota.hit, ip)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Alcanzaste el límite de {settings.chat_daily_limit} preguntas "
+                "por día. La cuota se renueva a las 00:00 UTC."
+            ),
+            headers={"Retry-After": "86400"},
+        )
+    request.state.quota_remaining = remaining
 
 
 def _sse(event_type: str, data: dict) -> str:
@@ -221,7 +275,7 @@ async def meta(request: Request):
     }
 
 
-@app.post("/api/chat", dependencies=[Depends(require_api_key)])
+@app.post("/api/chat", dependencies=[Depends(chat_access)])
 async def chat(request: Request, body: ChatRequest):
     agent: ContractsAgent = request.app.state.agent
 
@@ -277,8 +331,13 @@ async def chat(request: Request, body: ChatRequest):
                 {"message": f"Error interno del agente. Referencia para soporte: {ref}"},
             )
 
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    remaining = getattr(request.state, "quota_remaining", None)
+    if remaining is not None:
+        # El frontend muestra cuántas preguntas quedan hoy sin otra llamada.
+        headers["X-Quota-Remaining"] = str(remaining)
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=headers,
     )

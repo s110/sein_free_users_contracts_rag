@@ -53,7 +53,7 @@ describe("Message", () => {
         onCite={onCite}
       />,
     );
-    const chip = screen.getByRole("button", { name: "1" });
+    const chip = screen.getByRole("button", { name: /Ver fuente 1/ });
     await userEvent.click(chip);
     expect(onCite).toHaveBeenCalledWith(expect.objectContaining({ n: 1 }));
   });
@@ -76,8 +76,8 @@ describe("Message", () => {
         onCite={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: "1" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver fuente 1/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ver fuente 2/ })).toBeInTheDocument();
   });
 
   it("muestra el estado del agente mientras no hay contenido", () => {

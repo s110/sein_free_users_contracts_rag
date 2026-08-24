@@ -1,4 +1,4 @@
-"""Retrieval híbrido sobre Qdrant: denso (bge-m3) + léxico (full-text) con RRF.
+"""Retrieval híbrido sobre Qdrant: denso (embedder Ollama) + léxico (full-text) con RRF.
 
 Los contratos eléctricos mezclan lenguaje natural ("potencia contratada")
 con identificadores exactos (RUC, códigos de suministrador, fechas). La

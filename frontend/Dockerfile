@@ -23,4 +23,4 @@ EXPOSE 80
 # disco: con el backend caído seguía dando "healthy" mientras cada usuario
 # recibía 502 en su primera pregunta. Ahora atraviesa el proxy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD wget -qO- http://localhost/api/health >/dev/null || exit 1
+    CMD wget -qO- http://127.0.0.1/api/health >/dev/null || exit 1

@@ -35,6 +35,11 @@ COPY --from=builder --chown=rag:rag /app/src /app/src
 # `eval/` NO se copia: el golden set lleva RUC reales y nombres de contratos,
 # y no hace ninguna falta en la imagen que sirve tráfico.
 
+# El volumen de la cuota se inicializa con la propiedad de este directorio la
+# primera vez que Docker lo crea; sin esto nace root-owned, el proceso
+# (usuario rag) no puede abrir su SQLite y el backend muere al arrancar.
+RUN mkdir -p /data/quota /data/index && chown -R rag:rag /data
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1

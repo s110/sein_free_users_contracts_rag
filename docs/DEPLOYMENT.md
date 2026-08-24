@@ -24,7 +24,7 @@ quieres) login con Google/GitHub vienen incluidos en el plan gratuito.
 ```bash
 brew install ollama
 brew services start ollama          # arranca al login
-ollama pull qwen3:4b && ollama pull bge-m3
+ollama pull qwen3.5:4b && ollama pull qwen3-embedding:0.6b
 
 # Docker Desktop (o OrbStack, más liviano) con "Start at login" activado
 ```
@@ -49,6 +49,14 @@ echo "RAG_API_KEY=$(openssl rand -hex 24)" >> .env
   la API abierta (LAN de confianza), hay que pedirlo explícitamente con
   `RAG_ALLOW_ANONYMOUS=true`. No hay forma de exponer esto sin auth por
   descuido.
+- **Chat público con cuota (`RAG_PUBLIC_CHAT=true`)**: /api/chat acepta
+  visitantes sin clave, limitados a `RAG_CHAT_DAILY_LIMIT` preguntas por IP
+  y día (UTC), contadas en un SQLite que sobrevive a los deploys (volumen
+  `quota_state`). Una `X-API-Key` válida salta la cuota — el dueño usa su
+  propio sitio sin límite — y `/api/documents` y `/api/meta` siguen
+  exigiendo la clave siempre, porque publican RUC de usuarios libres. El
+  agotamiento responde 429 con `Retry-After` y la UI muestra las preguntas
+  restantes (cabecera `X-Quota-Remaining`).
 - La API key protege `POST /api/chat`, `GET /api/documents` y `GET /api/meta`.
   Los usuarios la ingresan una vez en el engranaje ⚙ de la UI (queda en su
   navegador). La comparación es en tiempo constante.
@@ -153,8 +161,8 @@ Señales de problema típicas:
 - `health.status = degraded` + `missing_models` → `make models`.
 - Respuestas lentas con usuarios concurrentes → es esperado: un solo LLM de
   4B atiende en serie. El rate limit de nginx mantiene la cola corta.
-- Memoria: qwen3:4b (~2.6GB) + bge-m3 (~1.2GB) + Qdrant + contenedores
-  ≈ 6-7GB; deja `OLLAMA_KEEP_ALIVE=10m` (default) para que los modelos se
+- Memoria: qwen3.5:4b (~3.4GB) + qwen3-embedding:0.6b (~0.6GB) + Qdrant +
+  contenedores ≈ 6-7GB; deja `OLLAMA_KEEP_ALIVE=10m` (default) para que los modelos se
   descarguen de RAM tras inactividad si el equipo hace otras tareas (OCR).
 
 ## Actualizar la app

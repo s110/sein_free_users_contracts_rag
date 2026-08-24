@@ -76,7 +76,7 @@ def build(settings: Settings, *, store=None, agent=None, ollama_ok=True):
 @pytest.fixture
 def ollama(monkeypatch):
     """Simula /api/tags de Ollama."""
-    state = {"ok": True, "models": ["qwen3:4b", "bge-m3"]}
+    state = {"ok": True, "models": ["qwen3.5:4b", "qwen3-embedding:0.6b"]}
 
     class FakeResponse:
         def __init__(self, models):

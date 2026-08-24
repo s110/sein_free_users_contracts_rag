@@ -42,6 +42,7 @@ export async function streamChat(
   filters: Filters,
   onEvent: (ev: SseEvent) => void,
   signal: AbortSignal,
+  onQuota?: (remaining: number) => void,
 ): Promise<void> {
   const cleanFilters: Record<string, string> = {};
   if (filters.tipo) cleanFilters.tipo = filters.tipo;
@@ -58,7 +59,19 @@ export async function streamChat(
     signal,
   });
   if (res.status === 401) throw new Error("API key inválida. Configúrala en el panel superior.");
+  if (res.status === 429) {
+    // El backend explica el límite y cuándo se renueva; ese texto es el error.
+    const detail = await res
+      .json()
+      .then((d) => (typeof d?.detail === "string" ? d.detail : ""))
+      .catch(() => "");
+    onQuota?.(0);
+    throw new Error(detail || "Alcanzaste el límite diario de preguntas. Vuelve mañana.");
+  }
   if (!res.ok || !res.body) throw new Error(`Error del servidor (${res.status})`);
+
+  const quotaHeader = res.headers.get("x-quota-remaining");
+  if (quotaHeader !== null) onQuota?.(Number(quotaHeader));
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

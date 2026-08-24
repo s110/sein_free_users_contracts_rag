@@ -18,6 +18,7 @@ function renderWithCitations(
         key={i}
         className="citation-chip"
         title={`${source.source_file}${source.page_start ? ` — pág. ${source.page_start}` : ""}`}
+        aria-label={`Ver fuente ${n}: ${source.source_file}`}
         onClick={() => onCite(source)}
       >
         {n}
@@ -38,15 +39,19 @@ export function Message({ message, onCite }: Props) {
   return (
     <div className="msg msg-assistant">
       {message.status && message.streaming && !message.content && (
-        <div className="agent-status">
-          <span className="spinner" /> {message.status}…
+        <div className="agent-status" aria-live="polite">
+          <span className="spinner" aria-hidden="true" /> {message.status}…
         </div>
       )}
       <div className="msg-body">
         {renderWithCitations(message.content, message.sources, onCite)}
         {message.streaming && message.content && <span className="cursor">▌</span>}
       </div>
-      {message.error && <div className="msg-error">⚠ {message.error}</div>}
+      {message.error && (
+        <div className="msg-error" role="alert">
+          ⚠ {message.error}
+        </div>
+      )}
       {!message.streaming && !message.error && message.content && (
         <div className="msg-footer">
           {message.grounded === true && (

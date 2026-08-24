@@ -20,6 +20,8 @@ export default function App() {
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
+  // null = sin cuota conocida (modo con API key o backend sin modo público).
+  const [quotaRemaining, setQuotaRemaining] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -28,12 +30,19 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: reduced ? "auto" : "smooth",
+    });
   }, [messages]);
 
   const onCite = useCallback((s: SourceRef) => {
     setHighlighted(s.n);
-    document.getElementById(`source-${s.n}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document
+      .getElementById(`source-${s.n}`)
+      ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
     setTimeout(() => setHighlighted(null), 2000);
   }, []);
 
@@ -107,7 +116,7 @@ export default function App() {
               updateLast({ streaming: false, status: undefined, error: ev.data.message });
               break;
           }
-        }, controller.signal);
+        }, controller.signal, setQuotaRemaining);
         if (!finished) {
           updateLast({
             streaming: false,
@@ -163,6 +172,8 @@ export default function App() {
               value={apiKeyInput}
               onChange={(e) => setApiKeyInput(e.target.value)}
               placeholder="X-API-Key"
+              autoComplete="off"
+              spellCheck={false}
             />
           </label>
           <button
@@ -179,6 +190,7 @@ export default function App() {
       <div className="filters-bar">
         <select
           value={filters.tipo ?? ""}
+          aria-label="Filtrar por tipo de documento"
           onChange={(e) => setFilters((f) => ({ ...f, tipo: e.target.value || undefined }))}
         >
           <option value="">Tipo: todos</option>
@@ -187,7 +199,9 @@ export default function App() {
         </select>
         <input
           className="ruc-input"
-          placeholder="Filtrar por RUC (11 dígitos)"
+          placeholder="Filtrar por RUC, ej. 20100017491"
+          aria-label="Filtrar por RUC del usuario libre (11 dígitos)"
+          inputMode="numeric"
           value={filters.ruc_usuario_libre ?? ""}
           maxLength={11}
           onChange={(e) => {
@@ -236,6 +250,7 @@ export default function App() {
                 }
               }}
               placeholder="Escribe tu pregunta… (Enter para enviar)"
+              aria-label="Tu pregunta sobre los contratos"
               rows={2}
               disabled={busy}
             />
@@ -249,6 +264,13 @@ export default function App() {
               </button>
             )}
           </form>
+          {quotaRemaining !== null && (
+            <p className="quota-note" aria-live="polite">
+              {quotaRemaining > 0
+                ? `Te quedan ${quotaRemaining} pregunta${quotaRemaining === 1 ? "" : "s"} hoy.`
+                : "Agotaste tus preguntas de hoy. La cuota se renueva a las 00:00 UTC."}
+            </p>
+          )}
         </section>
         <SourcesPanel
           sources={panelSources}

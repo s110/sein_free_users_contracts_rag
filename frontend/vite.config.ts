@@ -16,6 +16,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // jsdom reciente trata el origen por defecto como opaco y entonces no
+    // expone localStorage; con una URL http real vuelve a existir.
+    environmentOptions: { jsdom: { url: "http://localhost" } },
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],

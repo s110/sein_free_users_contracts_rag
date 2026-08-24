@@ -11,13 +11,27 @@
   --warn: #d29922;
   --err: #f85149;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Tema oscuro único: sin esto, scrollbars y controles nativos salen claros. */
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body { background: var(--bg); color: var(--text); }
 
-.app { display: flex; flex-direction: column; height: 100vh; }
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+/* Foco visible en todo lo interactivo, solo cuando se navega con teclado. */
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner, .cursor { animation: none; }
+  .source-card { transition: none; }
+}
 
 /* --- Top bar --- */
 .topbar {
@@ -118,13 +132,19 @@ body { background: var(--bg); color: var(--text); }
   color: var(--text); border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.9rem;
   font-family: inherit;
 }
-.composer textarea:focus { outline: none; border-color: var(--accent); }
+.composer textarea:focus { border-color: var(--accent); }
 .composer button {
   background: var(--accent); color: #fff; border: none; border-radius: 8px;
   padding: 0 1.2rem; cursor: pointer; font-size: 0.9rem;
 }
 .composer button:disabled { opacity: 0.4; cursor: default; }
+.composer button:not(:disabled):hover { filter: brightness(1.15); }
 .btn-stop { background: var(--err) !important; }
+
+.quota-note {
+  padding: 0 1.2rem 0.7rem; margin: 0; font-size: 0.78rem; color: var(--text-dim);
+  background: var(--surface);
+}
 
 /* --- Sources panel --- */
 .sources-panel {

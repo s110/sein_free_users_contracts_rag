@@ -17,7 +17,7 @@ preguntas citando documento, sección y página.
                     │    │   ↺ rewrite (si nada relevante) → generate → verify    │        │
                     │    └──────────────────────┬──────────────────────────────  ─┘        │
                     │        Ollama (nativo):   │ SSE streaming + citas [n]                │
-                    │        qwen3:4b + bge-m3  ▼                                          │
+                    │        qwen3.5:4b + qwen3-embedding  ▼                                          │
                     │    FastAPI ◀── nginx ◀── React+TS (chat, fuentes, filtros)           │
                     └────────────────────────────│─────────────────────────────────────────┘
                                                  ▼
@@ -28,8 +28,8 @@ preguntas citando documento, sección y página.
 
 | Capa | Tecnología | Por qué |
 |---|---|---|
-| LLM | [Qwen3 4B](https://ollama.com/library/qwen3) vía Ollama | Buen español y razonamiento, cabe en 16GB junto al embedder |
-| Embeddings | [BGE-M3](https://ollama.com/library/bge-m3) vía Ollama | Multilingüe (es), 1024 dims, sólido en recuperación legal |
+| LLM | [Qwen3.5 4B](https://ollama.com/library/qwen3.5) vía Ollama | Sucesor de Qwen3 4B (mar 2026): 201 idiomas, 256K de contexto, mismo footprint |
+| Embeddings | [Qwen3-Embedding 0.6B](https://ollama.com/library/qwen3-embedding) vía Ollama | Multilingüe (100+ idiomas), mejor que bge-m3 en MTEB con la mitad de RAM (~0.6GB) |
 | Vector store | [Qdrant](https://qdrant.tech) | Filtros de payload + índice full-text → búsqueda híbrida |
 | Orquestación | [LangGraph](https://langchain-ai.github.io/langgraph/) | Grafo agéntico explícito con ciclos controlados |
 | API | FastAPI + SSE | Streaming de tokens y estados del agente |
@@ -63,7 +63,7 @@ preguntas citando documento, sección y página.
 ```bash
 # 1. Modelos locales (Ollama nativo en el host, por acceso a Metal)
 brew install ollama && brew services start ollama
-make models                       # qwen3:4b + bge-m3
+make models                       # qwen3.5:4b + qwen3-embedding:0.6b
 
 # 2. Configuración
 cp .env.example .env              # ajusta VAULT_DIR a tu vault de .md
