@@ -27,6 +27,7 @@ export interface ChatMessage {
 export interface Filters {
   tipo?: string;
   ruc_usuario_libre?: string;
+  usuario_libre?: string;
 }
 
 export type SseEvent =

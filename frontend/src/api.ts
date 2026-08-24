@@ -47,6 +47,7 @@ export async function streamChat(
   const cleanFilters: Record<string, string> = {};
   if (filters.tipo) cleanFilters.tipo = filters.tipo;
   if (filters.ruc_usuario_libre) cleanFilters.ruc_usuario_libre = filters.ruc_usuario_libre;
+  if (filters.usuario_libre) cleanFilters.usuario_libre = filters.usuario_libre;
 
   const res = await fetch("/api/chat", {
     method: "POST",

@@ -2,7 +2,7 @@
 para que un cambio de prompt sea un diff revisable.
 """
 
-PROMPT_VERSION = "2026-07-02.1"
+PROMPT_VERSION = "2026-08-24.1"
 
 ANALYZE_PROMPT = """\
 Eres el analizador de consultas de un sistema RAG sobre contratos de suministro \
@@ -14,7 +14,8 @@ Dada la conversación y la última pregunta del usuario, produce JSON con:
 nombres de empresas, RUCs y fechas tal cual).
 - "filters": objeto con filtros de metadata SOLO si el usuario los menciona explícitamente. \
 Claves permitidas: "ruc_usuario_libre" (RUC de 11 dígitos), "tipo" ("contrato" o "adenda"), \
-"fecha_suscripcion" (YYYY-MM-DD exacta). Si no hay filtros claros, usa {{}}.
+"fecha_suscripcion" (YYYY-MM-DD exacta), "usuario_libre" (razón social del cliente o parte \
+de ella, p.ej. "lavanderia landeo"). Si no hay filtros claros, usa {{}}.
 
 Historial:
 {history}
@@ -57,7 +58,9 @@ REGLAS ESTRICTAS:
 1. Responde ÚNICAMENTE con información presente en el CONTEXTO. No uses conocimiento externo \
 para hechos, cifras, fechas o cláusulas.
 2. Cita cada afirmación con el marcador [n] del fragmento que la sustenta, p.ej.: \
-"La potencia contratada es 5 MW [2]."
+"La potencia contratada es 5 MW [1]." Usa ÚNICAMENTE números de fragmento que \
+existan en el CONTEXTO: si hay N fragmentos, los únicos marcadores válidos son \
+[1] a [N]. No inventes números.
 3. Si el contexto no contiene la respuesta, dilo explícitamente y sugiere cómo \
 reformular la búsqueda. NUNCA inventes.
 4. Si hay contradicciones entre fragmentos (p.ej. contrato vs. adenda), señálalas \

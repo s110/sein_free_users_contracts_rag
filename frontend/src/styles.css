@@ -72,6 +72,14 @@ select:focus-visible, textarea:focus-visible {
   padding: 0.35rem 0.6rem; border-radius: 6px; font-size: 0.82rem;
 }
 .ruc-input { width: 220px; }
+.razon-input { width: 280px; }
+.btn-fuentes {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--accent);
+  padding: 0.3rem 0.7rem; border-radius: 6px; cursor: pointer; font-size: 0.78rem;
+}
+.btn-fuentes:hover { border-color: var(--accent); }
+.source-title-link { color: inherit; text-decoration: underline dotted; }
+.source-title-link:hover { color: var(--accent); }
 
 /* --- Layout --- */
 .layout { display: flex; flex: 1; min-height: 0; }

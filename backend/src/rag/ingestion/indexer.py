@@ -20,7 +20,7 @@ from pathlib import Path
 import orjson
 from qdrant_client import QdrantClient, models
 
-from ..schemas import Chunk
+from ..schemas import Chunk, normalize_text_filter
 from .chunker import chunk_document
 from .embedder import OllamaEmbedder
 from .loader import iter_vault, load_document
@@ -101,6 +101,19 @@ def ensure_payload_indexes(client: QdrantClient, name: str) -> None:
             lowercase=True,
         ),
     )
+    # Índice full-text del espejo normalizado de la razón social: el filtro
+    # "usuario_libre" busca por palabras, no por igualdad exacta.
+    _create_index(
+        client,
+        name,
+        "usuario_libre_norm",
+        models.TextIndexParams(
+            type=models.TextIndexType.TEXT,
+            tokenizer=models.TokenizerType.WORD,
+            min_token_len=2,
+            lowercase=True,
+        ),
+    )
 
 
 def _create_index(client: QdrantClient, collection: str, field: str, schema) -> None:
@@ -160,6 +173,9 @@ def chunk_payload(chunk: Chunk) -> dict:
         "suministrador": m.suministrador,
         "suministrador_code": m.suministrador_code,
         "usuario_libre": m.usuario_libre,
+        # Espejo normalizado para el filtro por razón social (full-text sin
+        # tildes ni mayúsculas; ver schemas.normalize_text_filter).
+        "usuario_libre_norm": normalize_text_filter(m.usuario_libre) if m.usuario_libre else None,
         "ruc_usuario_libre": m.ruc_usuario_libre,
         "fecha_suscripcion": m.fecha_suscripcion,
         "source_url": m.source_url,

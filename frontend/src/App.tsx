@@ -17,6 +17,10 @@ export default function App() {
   const [filters, setFilters] = useState<Filters>({});
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [panelSources, setPanelSources] = useState<SourceRef[]>([]);
+  // Cerrar el panel no descarta las fuentes: se puede reabrir desde la
+  // barra superior (antes, cerrarlo era irreversible hasta la siguiente
+  // pregunta).
+  const [panelOpen, setPanelOpen] = useState(true);
   const [highlighted, setHighlighted] = useState<number | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState(getApiKey());
@@ -38,6 +42,7 @@ export default function App() {
   }, [messages]);
 
   const onCite = useCallback((s: SourceRef) => {
+    setPanelOpen(true);
     setHighlighted(s.n);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     document
@@ -95,6 +100,7 @@ export default function App() {
             case "sources":
               updateLast({ sources: ev.data.sources });
               setPanelSources(ev.data.sources);
+              setPanelOpen(true);
               break;
             case "token":
               appendToken(ev.data.text);
@@ -157,6 +163,11 @@ export default function App() {
               {health.indexed_chunks != null && ` · ${health.indexed_chunks} chunks`}
             </span>
           )}
+          {panelSources.length > 0 && !panelOpen && (
+            <button className="btn-fuentes" onClick={() => setPanelOpen(true)}>
+              Fuentes ({panelSources.length})
+            </button>
+          )}
           <button className="icon-btn" onClick={() => setShowSettings((v) => !v)} aria-label="Ajustes">
             ⚙
           </button>
@@ -197,6 +208,15 @@ export default function App() {
           <option value="contrato">Solo contratos</option>
           <option value="adenda">Solo adendas</option>
         </select>
+        <input
+          className="razon-input"
+          placeholder="Filtrar por razón social, ej. lavandería landeo"
+          aria-label="Filtrar por razón social del usuario libre"
+          value={filters.usuario_libre ?? ""}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, usuario_libre: e.target.value || undefined }))
+          }
+        />
         <input
           className="ruc-input"
           placeholder="Filtrar por RUC, ej. 20100017491"
@@ -272,11 +292,13 @@ export default function App() {
             </p>
           )}
         </section>
-        <SourcesPanel
-          sources={panelSources}
-          highlighted={highlighted}
-          onClose={() => setPanelSources([])}
-        />
+        {panelOpen && (
+          <SourcesPanel
+            sources={panelSources}
+            highlighted={highlighted}
+            onClose={() => setPanelOpen(false)}
+          />
+        )}
       </main>
     </div>
   );

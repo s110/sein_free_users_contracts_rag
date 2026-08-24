@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+def normalize_text_filter(value: str) -> str:
+    """Minúsculas, sin tildes, espacio simple.
+
+    El MISMO tratamiento se aplica al indexar (`usuario_libre_norm`) y al
+    filtrar, para que "lavanderia landeo" matchee
+    "LAVANDERÍA INDUSTRIAL LANDEO S.A.C." sin exigirle tildes al usuario.
+    """
+    lowered = " ".join(value.split()).lower()
+    decomposed = unicodedata.normalize("NFD", lowered)
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
 class DocumentMeta(BaseModel):

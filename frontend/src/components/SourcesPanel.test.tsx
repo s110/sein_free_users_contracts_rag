@@ -80,7 +80,7 @@ describe("SourcesPanel", () => {
         onClose={() => {}}
       />,
     );
-    const link = screen.getByRole("link");
+    const link = screen.getByRole("link", { name: /PDF original/ });
     expect(link).toHaveAttribute("href", "https://osinergmin.gob.pe/a.pdf");
     expect(link).toHaveAttribute("rel", expect.stringContaining("noreferrer"));
     expect(link).toHaveAttribute("target", "_blank");
@@ -115,7 +115,7 @@ describe("SourcesPanel: esquemas de URL", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByRole("link")).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /PDF original/ })).toHaveAttribute(
       "href",
       "https://www.osinergmin.gob.pe/a.pdf",
     );

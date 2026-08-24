@@ -15,7 +15,7 @@ from collections import defaultdict
 from qdrant_client import QdrantClient, models
 
 from ..ingestion.embedder import OllamaEmbedder
-from ..schemas import RetrievedChunk
+from ..schemas import RetrievedChunk, normalize_text_filter
 
 log = logging.getLogger("rag.retrieval")
 
@@ -37,11 +37,24 @@ RRF_K = 60
 def _build_filter(filters: dict | None) -> models.Filter | None:
     if not filters:
         return None
-    conditions = [
-        models.FieldCondition(key=k, match=models.MatchValue(value=str(v)))
-        for k, v in filters.items()
-        if k in FILTERABLE_FIELDS and v
-    ]
+    conditions = []
+    for k, v in filters.items():
+        if k not in FILTERABLE_FIELDS or not v:
+            continue
+        if k == "usuario_libre":
+            # Razón social: match por palabras sobre el espejo normalizado —
+            # el usuario escribe "lavanderia landeo", no la denominación
+            # exacta con tildes y "S.A.C.".
+            conditions.append(
+                models.FieldCondition(
+                    key="usuario_libre_norm",
+                    match=models.MatchText(text=normalize_text_filter(str(v))),
+                )
+            )
+        else:
+            conditions.append(
+                models.FieldCondition(key=k, match=models.MatchValue(value=str(v)))
+            )
     return models.Filter(must=conditions) if conditions else None
 
 

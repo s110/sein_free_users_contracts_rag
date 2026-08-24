@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 
 import orjson
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -52,6 +53,25 @@ def parse_json_reply(text: str) -> dict:
             except orjson.JSONDecodeError:
                 pass
     return {}
+
+
+_CITATION_MARKER_RE = re.compile(r"\[(\d{1,2})\]")
+
+
+def strip_ghost_citations(answer: str, n_sources: int) -> str:
+    """Borra marcadores [n] que no correspondan a ninguna fuente entregada.
+
+    Los modelos pequeños a veces copian el patrón del ejemplo del prompt y
+    citan [2] o [3] con una sola fuente en el contexto; el panel mostraba
+    "Fuentes: 1" y la respuesta prometía tres. La afirmación queda intacta,
+    solo cae el marcador falso.
+    """
+
+    def _keep_or_drop(m: re.Match[str]) -> str:
+        n = int(m.group(1))
+        return m.group(0) if 1 <= n <= n_sources else ""
+
+    return _CITATION_MARKER_RE.sub(_keep_or_drop, answer)
 
 
 def format_context(docs: list[RetrievedChunk]) -> str:
@@ -215,7 +235,7 @@ class ContractsAgent:
             ),
         ]
         reply = await self.llm_generate.ainvoke(messages)
-        return {"answer": str(reply.content)}
+        return {"answer": strip_ghost_citations(str(reply.content), len(docs))}
 
     async def verify(self, state: AgentState) -> dict:
         try:

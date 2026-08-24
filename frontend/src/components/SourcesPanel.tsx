@@ -42,7 +42,20 @@ export function SourcesPanel({ sources, highlighted, onClose }: Props) {
             className={`source-card${highlighted === s.n ? " highlighted" : ""}`}
           >
             <div className="source-title">
-              <span className="source-n">[{s.n}]</span> {s.source_file}
+              <span className="source-n">[{s.n}]</span>{" "}
+              {safeHref(s.source_url) ? (
+                <a
+                  href={safeHref(s.source_url)!}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="source-title-link"
+                  title="Ver el documento en el portal de Osinergmin"
+                >
+                  {s.source_file}
+                </a>
+              ) : (
+                s.source_file
+              )}
               {s.page_start != null && (
                 <span className="source-page">
                   {" "}
