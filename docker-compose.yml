@@ -115,12 +115,20 @@ services:
     # array Cmd del contenedor, visible con `docker inspect`, en `docker ps
     # --no-trunc` y en texto plano en config.v2.json. Quien lo leyera podía
     # levantar su propio cloudflared para el mismo hostname.
+    # Dos modos, excluyentes:
+    #  1. Token (túnel creado en el dashboard): define CLOUDFLARE_TUNNEL_TOKEN.
+    #  2. Local (túnel creado con `cloudflared tunnel create`): define
+    #     CLOUDFLARED_DIR apuntando a un directorio con config.yml (tunnel,
+    #     credentials-file, ingress) y el JSON de credenciales. El directorio
+    #     vive FUERA del repo: contiene el secreto del túnel.
     command: tunnel --no-autoupdate run
     environment:
       # Sin `:?`: compose interpola TODOS los servicios aunque el profile no
-      # esté activo, así que el error rompía el `up` básico sin túnel. Si el
-      # token falta, cloudflared muere al arrancar con error explícito.
+      # esté activo, así que el error rompía el `up` básico sin túnel. Si no
+      # hay ni token ni config montada, cloudflared muere con error explícito.
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    volumes:
+      - ${CLOUDFLARED_DIR:-/var/empty}:/etc/cloudflared:ro
     mem_limit: ${TUNNEL_MEM_LIMIT:-256m}
     depends_on:
       - frontend
