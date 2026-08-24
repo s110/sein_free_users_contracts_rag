@@ -113,6 +113,9 @@ docker compose --profile public up -d
 | `GET /api/meta` | Versiones de app y prompts, modelos activos |
 
 Con `RAG_API_KEY` definida, `chat` y `documents` exigen header `X-API-Key`.
+Con `RAG_PUBLIC_CHAT=true`, `chat` acepta además visitantes sin clave con una
+cuota diaria por IP (`RAG_CHAT_DAILY_LIMIT`, default 5); `documents` y `meta`
+siguen exigiendo la clave porque publican RUC de usuarios libres.
 
 ## Desarrollo
 
