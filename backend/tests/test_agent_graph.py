@@ -39,6 +39,16 @@ class FakeStore:
         self.calls.append({"query": query, "top_k": top_k, "filters": filters})
         return self.results.pop(0) if self.results else []
 
+    def search_diverse(self, query, *, n_docs, per_doc=2, filters=None):
+        self.calls.append(
+            {"query": query, "n_docs": n_docs, "per_doc": per_doc,
+             "filters": filters, "diverse": True}
+        )
+        return self.results.pop(0) if self.results else []
+
+    def count_distinct_docs(self, filters=None):  # noqa: ARG002
+        return getattr(self, "distinct_total", 0)
+
 
 def agent(*, json_replies=(), gen_replies=(), store_results=(), **overrides) -> ContractsAgent:
     settings = Settings(api_key="k", **overrides)

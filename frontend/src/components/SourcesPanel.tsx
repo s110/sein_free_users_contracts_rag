@@ -1,4 +1,5 @@
 import type { SourceRef } from "../types";
+import { Markdown } from "./Markdown";
 
 /**
  * React NO bloquea esquemas peligrosos en `href`: solo avisa por consola y
@@ -91,7 +92,9 @@ export function SourcesPanel({ sources, highlighted, onClose }: Props) {
               )}
             </dl>
             {s.section && <div className="source-section">§ {s.section}</div>}
-            <p className="source-snippet">{s.snippet}…</p>
+            <div className="source-snippet">
+              <Markdown text={s.snippet} />
+            </div>
             {safeHref(s.source_url) && (
               <a
                 href={safeHref(s.source_url)!}

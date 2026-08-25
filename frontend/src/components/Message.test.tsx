@@ -29,7 +29,7 @@ function assistant(extra: Partial<ChatMessage> = {}): ChatMessage {
 describe("Message", () => {
   it("renderiza el mensaje del usuario como texto plano", () => {
     render(
-      <Message message={{ role: "user", content: "¿Cuál es la potencia?" }} onCite={() => {}} />,
+      <Message message={{ role: "user", content: "¿Cuál es la potencia?" }} onCite={() => {}} onShowSources={() => {}} />,
     );
     expect(screen.getByText("¿Cuál es la potencia?")).toBeInTheDocument();
   });
@@ -37,12 +37,52 @@ describe("Message", () => {
   it("no interpreta HTML del modelo (sin XSS)", () => {
     const { container } = render(
       <Message
-        message={assistant({ content: "<img src=x onerror=alert(1)>" })}
-        onCite={() => {}}
+        message={assistant({ content: "<img src=x onerror=alert(1)> hola" })}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
+    // react-markdown sin rehype-raw descarta los nodos HTML: no hay <img>
+    // ni ejecución; el texto legítimo alrededor sobrevive.
     expect(container.querySelector("img")).toBeNull();
-    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(container.textContent).toContain("hola");
+  });
+
+  it("renderiza Markdown: negritas y tablas GFM", () => {
+    const md = "La potencia es **1015 kW**.\n\n| Cliente | kW |\n|---|---|\n| ACME | 1000 |";
+    const { container } = render(
+      <Message message={assistant({ content: md })} onCite={() => {}} onShowSources={() => {}} />,
+    );
+    expect(container.querySelector("strong")?.textContent).toBe("1015 kW");
+    expect(container.querySelector(".table-wrap table")).not.toBeNull();
+    expect(screen.getByRole("cell", { name: "ACME" })).toBeInTheDocument();
+    expect(container.textContent).not.toContain("**");
+  });
+
+  it("los chips de cita funcionan dentro de una celda de tabla", async () => {
+    const onCite = vi.fn();
+    const md = "| Cliente | kW |\n|---|---|\n| ACME [1] | 1000 |";
+    render(
+      <Message
+        message={assistant({ content: md, sources: [source(1)] })}
+        onCite={onCite}
+        onShowSources={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Ver fuente 1/ }));
+    expect(onCite).toHaveBeenCalled();
+  });
+
+  it("el pie ofrece reabrir las fuentes del mensaje", async () => {
+    const onShowSources = vi.fn();
+    render(
+      <Message
+        message={assistant({ content: "ok [1]", sources: [source(1)] })}
+        onCite={() => {}}
+        onShowSources={onShowSources}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Fuentes \(1\)/ }));
+    expect(onShowSources).toHaveBeenCalledWith([expect.objectContaining({ n: 1 })]);
   });
 
   it("convierte [n] en un chip clickeable cuando la fuente existe", async () => {
@@ -51,18 +91,24 @@ describe("Message", () => {
       <Message
         message={assistant({ content: "La potencia es 10 MW [1].", sources: [source(1)] })}
         onCite={onCite}
+        onShowSources={() => {}}
       />,
     );
     const chip = screen.getByRole("button", { name: /Ver fuente 1/ });
     await userEvent.click(chip);
-    expect(onCite).toHaveBeenCalledWith(expect.objectContaining({ n: 1 }));
+    // Segundo argumento: las fuentes del propio mensaje (el panel muestra
+    // las de la respuesta citada, no las de la última pregunta).
+    expect(onCite).toHaveBeenCalledWith(
+      expect.objectContaining({ n: 1 }),
+      expect.arrayContaining([expect.objectContaining({ n: 1 })]),
+    );
   });
 
   it("deja [n] como texto cuando la cita no tiene fuente correspondiente", () => {
     const { container } = render(
       <Message
         message={assistant({ content: "Ver [7] para detalle.", sources: [source(1)] })}
-        onCite={() => {}}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
     expect(container.querySelectorAll("button.citation-chip")).toHaveLength(0);
@@ -73,7 +119,7 @@ describe("Message", () => {
     render(
       <Message
         message={assistant({ content: "[1] y también [2].", sources: [source(1), source(2)] })}
-        onCite={() => {}}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
     expect(screen.getByRole("button", { name: /Ver fuente 1/ })).toBeInTheDocument();
@@ -84,7 +130,7 @@ describe("Message", () => {
     render(
       <Message
         message={assistant({ streaming: true, status: "Buscando en los contratos" })}
-        onCite={() => {}}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
     expect(screen.getByText(/Buscando en los contratos/)).toBeInTheDocument();
@@ -94,24 +140,24 @@ describe("Message", () => {
     render(
       <Message
         message={assistant({ streaming: true, status: "Redactando", content: "Ya hay texto" })}
-        onCite={() => {}}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
     expect(screen.queryByText(/Redactando…/)).not.toBeInTheDocument();
   });
 
   it("muestra el badge verificado cuando grounded es true", () => {
-    render(<Message message={assistant({ content: "ok", grounded: true })} onCite={() => {}} />);
+    render(<Message message={assistant({ content: "ok", grounded: true })} onCite={() => {}} onShowSources={() => {}} />);
     expect(screen.getByText(/Verificado contra fuentes/)).toBeInTheDocument();
   });
 
   it("muestra la advertencia cuando grounded es false", () => {
-    render(<Message message={assistant({ content: "ok", grounded: false })} onCite={() => {}} />);
+    render(<Message message={assistant({ content: "ok", grounded: false })} onCite={() => {}} onShowSources={() => {}} />);
     expect(screen.getByText(/Verificación no concluyente/)).toBeInTheDocument();
   });
 
   it("no muestra badges cuando grounded es null", () => {
-    render(<Message message={assistant({ content: "ok", grounded: null })} onCite={() => {}} />);
+    render(<Message message={assistant({ content: "ok", grounded: null })} onCite={() => {}} onShowSources={() => {}} />);
     expect(screen.queryByText(/Verificado contra fuentes/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Verificación no concluyente/)).not.toBeInTheDocument();
   });
@@ -120,7 +166,7 @@ describe("Message", () => {
     render(
       <Message
         message={assistant({ content: "parcial", grounded: true, error: "timeout" })}
-        onCite={() => {}}
+        onCite={() => {}} onShowSources={() => {}}
       />,
     );
     expect(screen.getByText(/timeout/)).toBeInTheDocument();
@@ -128,7 +174,7 @@ describe("Message", () => {
   });
 
   it("marca la ausencia de contexto", () => {
-    render(<Message message={assistant({ content: "n/a", noContext: true })} onCite={() => {}} />);
+    render(<Message message={assistant({ content: "n/a", noContext: true })} onCite={() => {}} onShowSources={() => {}} />);
     expect(screen.getByText(/Sin contexto en el índice/)).toBeInTheDocument();
   });
 });

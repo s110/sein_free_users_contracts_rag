@@ -2,7 +2,7 @@
 para que un cambio de prompt sea un diff revisable.
 """
 
-PROMPT_VERSION = "2026-08-25.2"
+PROMPT_VERSION = "2026-08-26.1"
 
 ANALYZE_PROMPT = """\
 Eres el analizador de consultas de un sistema RAG sobre contratos de suministro \
@@ -25,10 +25,17 @@ por fecha de suscripción; "mas_antiguo" si pide el más viejo/primero; null si 
 OJO con el tipo: "el CONTRATO más reciente" implica filters.tipo="contrato" (un contrato, \
 no una adenda); "la ADENDA más reciente" implica filters.tipo="adenda"; "el documento \
 más reciente" o "lo último publicado" no llevan filtro de tipo.
+- "num_docs": entero N si el usuario pide explícitamente VARIOS documentos distintos \
+("dame 5 contratos de X", "resume 3 adendas", "compara dos contratos", "contrasta el \
+contrato de A con el de B" → 2); null si pregunta por un solo documento o por un dato \
+puntual. Los números escritos en letras cuentan ("dos" → 2, "cinco" → 5).
 - "filters": objeto con filtros de metadata SOLO si el usuario los menciona explícitamente. \
 Claves permitidas: "ruc_usuario_libre" (RUC de 11 dígitos), "tipo" ("contrato" o "adenda"), \
 "fecha_suscripcion" (YYYY-MM-DD exacta), "usuario_libre" (razón social del cliente o parte \
-de ella, p.ej. "lavanderia landeo"). Si no hay filtros claros, usa {{}}.
+de ella, p.ej. "lavanderia landeo"), "suministrador" (nombre de la empresa suministradora \
+o parte de él, p.ej. "orygen", "atria", "kallpa", "engie"). OJO: el suministrador es quien \
+VENDE la energía ("contratos que suscribió Orygen" → suministrador="orygen"); el usuario \
+libre es el cliente que la compra. Si no hay filtros claros, usa {{}}.
 
 Historial:
 {history}
@@ -85,6 +92,13 @@ reformular la búsqueda. NUNCA inventes.
 4. Si hay contradicciones entre fragmentos (p.ej. contrato vs. adenda), señálalas \
 citando ambos.
 5. Sé conciso: responde lo preguntado, sin relleno.
+6. El CONTEXTO es una MUESTRA recuperada, no el índice completo. NUNCA afirmes que \
+"solo existe un contrato" de una empresa o que "no hay más documentos": di cuántos \
+documentos distintos contiene TU contexto ("en los fragmentos recuperados aparecen K \
+documentos") y, si una NOTA DEL SISTEMA indica cuántos hay en el índice, usa esa cifra.
+7. Formato: puedes usar Markdown — **negritas**, listas y tablas se renderizan. Para \
+comparar varios documentos usa una tabla. Los marcadores de cita [n] van FUERA de las \
+negritas y funcionan también dentro de celdas de tabla.
 
 CÓMO FUNCIONAN ESTOS DOCUMENTOS (casuística del registro de Osinergmin):
 - Un CONTRATO (versión 00) es el acuerdo base; una ADENDA (versiones 01, 02...) \
@@ -132,6 +146,16 @@ OUT_OF_SCOPE_ANSWER = (
 BULK_EXTRACTION_ANSWER = (
     "No puedo entregar listados masivos de datos del índice. Puedo responder "
     "preguntas concretas sobre un contrato, una empresa o una cláusula específica."
+)
+
+MULTI_DOC_NOTE = (
+    "\nNOTA DEL SISTEMA: el usuario pidió {pedidos} documentos distintos. El contexto "
+    "contiene fragmentos de {en_contexto} documento(s) distinto(s); el índice completo "
+    "tiene {en_indice} documento(s) que coinciden con los filtros de la consulta. "
+    "Presenta los {en_contexto} del contexto (una tabla ayuda a compararlos). Si son "
+    "menos de {pedidos}, dilo indicando la cifra real del índice y sugiere repetir la "
+    "pregunta acotando por empresa, tipo o fecha — NUNCA digas que 'solo existe' esa "
+    "cantidad de documentos.\n"
 )
 
 NO_CONTEXT_ANSWER = (

@@ -101,19 +101,21 @@ def ensure_payload_indexes(client: QdrantClient, name: str) -> None:
             lowercase=True,
         ),
     )
-    # Índice full-text del espejo normalizado de la razón social: el filtro
-    # "usuario_libre" busca por palabras, no por igualdad exacta.
-    _create_index(
-        client,
-        name,
-        "usuario_libre_norm",
-        models.TextIndexParams(
-            type=models.TextIndexType.TEXT,
-            tokenizer=models.TokenizerType.WORD,
-            min_token_len=2,
-            lowercase=True,
-        ),
-    )
+    # Índices full-text de los espejos normalizados: los filtros
+    # "usuario_libre" y "suministrador" buscan por palabras ("orygen",
+    # "lavanderia landeo"), no por igualdad exacta con tildes y "S.A.C.".
+    for norm_field in ("usuario_libre_norm", "suministrador_norm"):
+        _create_index(
+            client,
+            name,
+            norm_field,
+            models.TextIndexParams(
+                type=models.TextIndexType.TEXT,
+                tokenizer=models.TokenizerType.WORD,
+                min_token_len=2,
+                lowercase=True,
+            ),
+        )
 
 
 def _create_index(client: QdrantClient, collection: str, field: str, schema) -> None:
@@ -123,6 +125,54 @@ def _create_index(client: QdrantClient, collection: str, field: str, schema) -> 
         )
     except Exception as e:  # noqa: BLE001 — ya existente es el caso normal
         log.debug("Índice '%s' ya presente o no creable: %s", field, e)
+
+
+def backfill_norm_fields(client: QdrantClient, collection: str) -> int:
+    """Rellena los espejos *_norm en puntos indexados antes de que existieran.
+
+    Solo payload (sin re-embeber): agrupa los ids por valor normalizado y hace
+    un set_payload por grupo — hay ~30 suministradores distintos, no ~13k
+    llamadas. Idempotente: los puntos que ya tienen el espejo se saltan.
+    """
+    groups: dict[tuple[str | None, str | None], list] = {}
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=collection,
+            with_payload=["suministrador", "suministrador_norm",
+                          "usuario_libre", "usuario_libre_norm"],
+            with_vectors=False,
+            limit=1024,
+            offset=offset,
+        )
+        for p in points:
+            pl = p.payload or {}
+            sum_norm = (
+                normalize_text_filter(pl["suministrador"])
+                if pl.get("suministrador") and not pl.get("suministrador_norm")
+                else None
+            )
+            ul_norm = (
+                normalize_text_filter(pl["usuario_libre"])
+                if pl.get("usuario_libre") and not pl.get("usuario_libre_norm")
+                else None
+            )
+            if sum_norm or ul_norm:
+                groups.setdefault((sum_norm, ul_norm), []).append(p.id)
+        if offset is None:
+            break
+    updated = 0
+    for (sum_norm, ul_norm), ids in groups.items():
+        payload = {}
+        if sum_norm:
+            payload["suministrador_norm"] = sum_norm
+        if ul_norm:
+            payload["usuario_libre_norm"] = ul_norm
+        client.set_payload(collection_name=collection, payload=payload, points=ids, wait=True)
+        updated += len(ids)
+    if updated:
+        log.info("Backfill *_norm: %d chunks actualizados en %d grupos", updated, len(groups))
+    return updated
 
 
 def stored_hashes(client: QdrantClient, collection: str) -> dict[str, str]:
@@ -173,6 +223,7 @@ def chunk_payload(chunk: Chunk) -> dict:
         # del scraper "Adenda"; el índice mezclado rompía el filtro exacto.
         "tipo": m.tipo.lower() if m.tipo else None,
         "suministrador": m.suministrador,
+        "suministrador_norm": normalize_text_filter(m.suministrador) if m.suministrador else None,
         "suministrador_code": m.suministrador_code,
         "usuario_libre": m.usuario_libre,
         # Espejo normalizado para el filtro por razón social (full-text sin

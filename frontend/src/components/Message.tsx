@@ -1,41 +1,19 @@
 import type { ChatMessage, SourceRef } from "../types";
-
-/** Renderiza el texto de la respuesta convirtiendo marcadores [n] en chips de cita. */
-function renderWithCitations(
-  text: string,
-  sources: SourceRef[] | undefined,
-  onCite: (s: SourceRef) => void,
-) {
-  const parts = text.split(/(\[\d+\])/g);
-  return parts.map((part, i) => {
-    const m = part.match(/^\[(\d+)\]$/);
-    if (!m) return <span key={i}>{part}</span>;
-    const n = parseInt(m[1], 10);
-    const source = sources?.find((s) => s.n === n);
-    if (!source) return <span key={i}>{part}</span>;
-    return (
-      <button
-        key={i}
-        className="citation-chip"
-        title={`${source.source_file}${source.page_start ? ` — pág. ${source.page_start}` : ""}`}
-        aria-label={`Ver fuente ${n}: ${source.source_file}`}
-        onClick={() => onCite(source)}
-      >
-        {n}
-      </button>
-    );
-  });
-}
+import { Markdown } from "./Markdown";
 
 interface Props {
   message: ChatMessage;
-  onCite: (s: SourceRef) => void;
+  /** Recibe también las fuentes DEL MENSAJE: el panel muestra las de la
+   *  respuesta citada, no las de la última pregunta. */
+  onCite: (s: SourceRef, sources: SourceRef[]) => void;
+  onShowSources: (sources: SourceRef[]) => void;
 }
 
-export function Message({ message, onCite }: Props) {
+export function Message({ message, onCite, onShowSources }: Props) {
   if (message.role === "user") {
     return <div className="msg msg-user">{message.content}</div>;
   }
+  const sources = message.sources ?? [];
   return (
     <div className="msg msg-assistant">
       {message.status && message.streaming && !message.content && (
@@ -44,7 +22,11 @@ export function Message({ message, onCite }: Props) {
         </div>
       )}
       <div className="msg-body">
-        {renderWithCitations(message.content, message.sources, onCite)}
+        <Markdown
+          text={message.content}
+          sources={sources}
+          onCite={(s) => onCite(s, sources)}
+        />
         {message.streaming && message.content && <span className="cursor">▌</span>}
       </div>
       {message.error && (
@@ -65,6 +47,16 @@ export function Message({ message, onCite }: Props) {
             </span>
           )}
           {message.noContext && <span className="badge badge-muted">Sin contexto en el índice</span>}
+          {sources.length > 0 && (
+            <button
+              type="button"
+              className="badge badge-fuentes"
+              onClick={() => onShowSources(sources)}
+              title="Abrir en el panel las fuentes de esta respuesta"
+            >
+              Fuentes ({sources.length})
+            </button>
+          )}
         </div>
       )}
     </div>

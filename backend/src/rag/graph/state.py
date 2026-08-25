@@ -17,8 +17,10 @@ class AgentState(TypedDict, total=False):
     search_query: str  # pregunta reescrita como query autónoma
     filters: dict  # filtros efectivos (usuario + extraídos)
     scope: str  # "contratos" | "fuera_de_tema" | "extraccion_masiva"
+    num_docs: int | None  # cuántos documentos DISTINTOS pidió el usuario (>=2 activa diversidad)
     resolved_doc: dict | None  # doc elegido por el selector temporal (más reciente/antiguo)
     selector_note: str | None  # nota al generador sobre cómo se resolvió el superlativo
+    multi_doc_note: str | None  # nota al generador: docs pedidos vs. en contexto vs. en índice
 
     # Retrieval
     documents: list[RetrievedChunk]

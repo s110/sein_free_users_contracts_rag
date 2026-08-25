@@ -174,6 +174,17 @@ class ContractsAgent:
         # Los filtros explícitos del usuario (UI) mandan sobre los extraídos
         filters.update(state.get("user_filters") or {})
 
+        # ¿Piden varios documentos distintos? ("5 contratos de Orygen",
+        # "compara dos contratos"). Activa el retrieval con diversidad por
+        # doc_id; acotado a 8 para no reventar el contexto del generador.
+        num_docs = None
+        try:
+            n = int(data.get("num_docs") or 0)
+            if n >= 2:
+                num_docs = min(n, 8)
+        except (TypeError, ValueError):
+            pass
+
         # Superlativo temporal: "el contrato más reciente" no se resuelve por
         # similitud — se busca el máximo de fecha_suscripcion en la metadata
         # (respetando los filtros) y se acota el retrieval a ese documento.
@@ -192,13 +203,16 @@ class ContractsAgent:
             elif pide_adenda and not pide_contrato:
                 filters["tipo"] = "adenda"
         if scope == "contratos" and orden in ("mas_reciente", "mas_antiguo"):
-            resolved_doc = await asyncio.to_thread(
-                self.store.find_extreme_doc, filters or None, latest=orden == "mas_reciente"
+            extreme_docs = await asyncio.to_thread(
+                lambda: self.store.find_extreme_docs(
+                    filters or None, latest=orden == "mas_reciente", n=num_docs or 1
+                )
             )
-            if resolved_doc and resolved_doc.get("doc_id"):
+            adjetivo = "reciente(s)" if orden == "mas_reciente" else "antiguo(s)"
+            if len(extreme_docs) == 1:
+                resolved_doc = extreme_docs[0]
                 filters = dict(filters)
                 filters["doc_id"] = resolved_doc["doc_id"]
-                adjetivo = "reciente" if orden == "mas_reciente" else "antiguo"
                 selector_note = (
                     f"\nNOTA DEL SISTEMA: el documento más {adjetivo} del índice que "
                     f"coincide con la pregunta es un(a) {resolved_doc.get('tipo') or 'documento'} "
@@ -207,15 +221,32 @@ class ContractsAgent:
                     "naturaleza exacta; si es una adenda, aclara que modifica un contrato "
                     "anterior y no la llames 'el contrato'.\n"
                 )
+            elif extreme_docs:
+                # "Los N contratos más recientes": el retrieval se acota a esos
+                # N doc_id exactos y el generador recibe la lista resuelta.
+                filters = dict(filters)
+                filters["doc_id"] = [d["doc_id"] for d in extreme_docs]
+                listado = "; ".join(
+                    f"{d.get('tipo') or 'documento'} de {d.get('usuario_libre') or '¿?'} "
+                    f"suscrito el {d.get('fecha_suscripcion') or '¿?'}"
+                    for d in extreme_docs
+                )
+                selector_note = (
+                    f"\nNOTA DEL SISTEMA: los {len(extreme_docs)} documentos más "
+                    f"{adjetivo} del índice que coinciden con la pregunta son: {listado}. "
+                    "Presenta cada uno con su naturaleza exacta (contrato o adenda).\n"
+                )
         # Ni la pregunta ni los RUC van al log: `docker logs` acababa siendo
         # un registro consultable de qué analista preguntó por qué empresa.
         log.info(
-            "analyze: alcance=%s, %d filtros, orden=%s", scope, len(filters), orden or "-"
+            "analyze: alcance=%s, %d filtros, orden=%s, num_docs=%s",
+            scope, len(filters), orden or "-", num_docs or "-",
         )
         return {
             "search_query": search_query,
             "filters": filters,
             "scope": scope,
+            "num_docs": num_docs,
             "resolved_doc": resolved_doc,
             "selector_note": selector_note,
             "rewrites": state.get("rewrites", 0),
@@ -226,11 +257,36 @@ class ContractsAgent:
         # llamaba directamente desde este `async def`: una llamada lenta a
         # Ollama bloqueaba el event loop entero, congelando los SSE de todos
         # los demás usuarios y el propio /api/health.
+        num_docs = state.get("num_docs") or 0
+        filters = state.get("filters") or None
+        if num_docs >= 2:
+            docs = await asyncio.to_thread(
+                lambda: self.store.search_diverse(
+                    state["search_query"], n_docs=num_docs, per_doc=2, filters=filters
+                )
+            )
+            if not docs and filters and not state.get("user_filters"):
+                # Mismo fallback que abajo: un filtro mal extraído no debe
+                # dejar al usuario sin respuesta.
+                log.info("retrieve diverso: 0 docs con filtros, reintento sin filtros")
+                filters = None
+                docs = await asyncio.to_thread(
+                    lambda: self.store.search_diverse(
+                        state["search_query"], n_docs=num_docs, per_doc=2, filters=None
+                    )
+                )
+            distinct = len({d.doc_id for d in docs})
+            total = await asyncio.to_thread(self.store.count_distinct_docs, filters)
+            note = prompts.MULTI_DOC_NOTE.format(
+                pedidos=num_docs, en_contexto=distinct, en_indice=total
+            )
+            log.info("retrieve diverso: %d docs distintos de %d en índice", distinct, total)
+            return {"documents": docs, "multi_doc_note": note}
         docs = await asyncio.to_thread(
             self.store.search,
             state["search_query"],
             top_k=self.settings.top_k,
-            filters=state.get("filters") or None,
+            filters=filters,
         )
         # Si el filtro extraído automáticamente dejó 0 resultados, reintenta sin él
         # (un RUC mal extraído no debe dejar al usuario sin respuesta)
@@ -247,8 +303,17 @@ class ContractsAgent:
         return {"documents": docs}
 
     async def grade(self, state: AgentState) -> dict:
-        relevant: list[RetrievedChunk] = []
-        for doc in state.get("documents", []):
+        docs = state.get("documents", [])
+        if (state.get("num_docs") or 0) >= 2 and docs:
+            # En modo multi-documento el grading por fragmento es
+            # contraproducente: "dame 5 contratos de Atria" hacía que el
+            # evaluador rechazara CADA portada por no responder sola la
+            # pregunta completa (0/8 relevantes → rewrite → misma poda).
+            # Los filtros de metadata ya seleccionaron los documentos.
+            log.info("grade: omitido en modo multi-documento (%d fragmentos)", len(docs))
+            return {"relevant_documents": docs}
+
+        async def _grade_one(doc: RetrievedChunk) -> bool:
             reply = await self.llm_json.ainvoke(
                 [
                     HumanMessage(
@@ -262,9 +327,13 @@ class ContractsAgent:
             )
             data = parse_json_reply(str(reply.content))
             # Fallback permisivo: ante duda del grader, el generador decide
-            if data.get("relevant", True):
-                relevant.append(doc)
-        log.info("grade: %d/%d relevantes", len(relevant), len(state.get("documents", [])))
+            return bool(data.get("relevant", True))
+
+        # En paralelo: en serie, 12 fragmentos del modo multi-documento eran
+        # 12 viajes al LLM uno detrás de otro (~20 s solo de grading).
+        verdicts = await asyncio.gather(*(_grade_one(d) for d in docs))
+        relevant = [d for d, ok in zip(docs, verdicts, strict=True) if ok]
+        log.info("grade: %d/%d relevantes", len(relevant), len(docs))
         return {"relevant_documents": relevant}
 
     async def rewrite(self, state: AgentState) -> dict:
@@ -292,7 +361,8 @@ class ContractsAgent:
                 content=prompts.GENERATE_USER.format(
                     context=format_context(docs),
                     question=state["question"],
-                    selector_note=state.get("selector_note") or "",
+                    selector_note=(state.get("selector_note") or "")
+                    + (state.get("multi_doc_note") or ""),
                 )
             ),
         ]
@@ -305,7 +375,13 @@ class ContractsAgent:
                 [
                     HumanMessage(
                         content=prompts.GROUNDEDNESS_PROMPT.format(
-                            context=truncate_context(
+                            # Las notas del sistema también son contexto citable:
+                            # sin ellas, "el índice tiene 581 documentos" (cifra
+                            # que la nota le dio al generador) marcaba TODA
+                            # respuesta multi-documento como no sustentada.
+                            context=(state.get("selector_note") or "")
+                            + (state.get("multi_doc_note") or "")
+                            + truncate_context(
                                 state["relevant_documents"], self.settings.verify_context_chars
                             ),
                             answer=state["answer"],

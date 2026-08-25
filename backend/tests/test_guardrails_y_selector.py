@@ -16,9 +16,11 @@ class FakeStoreConSelector(FakeStore):
         self.extreme = extreme
         self.extreme_calls: list[dict] = []
 
-    def find_extreme_doc(self, filters, *, latest=True):
-        self.extreme_calls.append({"filters": filters, "latest": latest})
-        return self.extreme
+    def find_extreme_docs(self, filters, *, latest=True, n=1):
+        self.extreme_calls.append({"filters": filters, "latest": latest, "n": n})
+        if self.extreme is None:
+            return []
+        return [self.extreme] if n == 1 else [self.extreme] * n
 
 
 def agente(*, json_replies=(), gen_replies=(), store=None):

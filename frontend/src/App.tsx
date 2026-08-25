@@ -37,6 +37,9 @@ export default function App() {
     if (m) {
       const clave = decodeURIComponent(m[1]);
       setApiKey(clave);
+      // Sincronización única al montar (guardar la clave del link mágico);
+      // no puede cascadear: solo corre si la URL traía #acceso=.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setApiKeyInput(clave);
       history.replaceState(null, "", window.location.pathname + window.location.search);
     }
@@ -51,13 +54,23 @@ export default function App() {
     });
   }, [messages]);
 
-  const onCite = useCallback((s: SourceRef) => {
+  const showSources = useCallback((sources: SourceRef[]) => {
+    setPanelSources(sources);
+    setPanelOpen(true);
+  }, []);
+
+  const onCite = useCallback((s: SourceRef, sources: SourceRef[]) => {
+    // El panel pasa a mostrar las fuentes del MENSAJE citado (cada respuesta
+    // conserva las suyas); el scroll espera al re-render del panel.
+    setPanelSources(sources);
     setPanelOpen(true);
     setHighlighted(s.n);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    document
-      .getElementById(`source-${s.n}`)
-      ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`source-${s.n}`)
+        ?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    });
     setTimeout(() => setHighlighted(null), 2000);
   }, []);
 
@@ -67,7 +80,8 @@ export default function App() {
       if (!q || busy) return;
       setInput("");
       setBusy(true);
-      setPanelSources([]);
+      // Las fuentes de la respuesta anterior siguen visibles en el panel
+      // hasta que lleguen las nuevas; cada mensaje conserva las suyas.
 
       const history = messages
         .filter((m) => !m.error)
@@ -260,7 +274,7 @@ export default function App() {
               </div>
             )}
             {messages.map((m, i) => (
-              <Message key={i} message={m} onCite={onCite} />
+              <Message key={i} message={m} onCite={onCite} onShowSources={showSources} />
             ))}
           </div>
           <form
