@@ -54,15 +54,26 @@ echo "RAG_API_KEY=$(openssl rand -hex 24)" >> .env
   y día (UTC), contadas en un SQLite que sobrevive a los deploys (volumen
   `quota_state`). Una `X-API-Key` válida salta la cuota — el dueño usa su
   propio sitio sin límite — y `/api/documents` y `/api/meta` siguen
-  exigiendo la clave siempre, porque publican RUC de usuarios libres. El
+  exigiendo la clave, porque publican RUC de usuarios libres. El
   agotamiento responde 429 con `Retry-After` y la UI muestra las preguntas
   restantes (cabecera `X-Quota-Remaining`).
+- **`RAG_ALLOW_ANONYMOUS=true` es la excepción a lo anterior**, y conviene
+  leerla dos veces: sin `RAG_API_KEY` no hay clave que exigir, así que
+  `/api/documents` y `/api/meta` quedan **abiertos a quien pregunte**, con el
+  RUC de cada usuario libre. Es el modo "LAN de confianza"; no lo uses para
+  un demo público. El arranque lo avisa en el log.
 - La API key protege `POST /api/chat`, `GET /api/documents` y `GET /api/meta`.
   Los usuarios la ingresan una vez en el engranaje ⚙ de la UI (queda en su
   navegador). La comparación es en tiempo constante.
 - nginx aplica rate limit: 10 consultas/min **por IP real del cliente**
   (`CF-Connecting-IP`); sin eso, detrás del túnel todo internet compartía un
-  único cubo de 10/min y un solo atacante podía dejar fuera a todos.
+  único cubo de 10/min y un solo atacante podía dejar fuera a todos. Esa
+  cabecera solo se acepta de peers en red privada (el contenedor
+  `cloudflared` o el loopback del host): antes se aceptaba de cualquiera, y
+  quien alcanzara nginx sin pasar por el borde de Cloudflare elegía su propia
+  IP y con ella su propio cubo. El backend hace la misma comprobación con
+  `X-Real-IP` antes de usarla como clave de la cuota diaria; los rangos de
+  confianza se ajustan con `RAG_TRUSTED_PROXIES`.
 - nginx envía CSP, `X-Frame-Options: DENY` y `nosniff`, y limita el cuerpo a 1 MB.
 - Qdrant, el backend **y nginx** escuchan solo en `127.0.0.1` del host: el
   único camino de entrada es el túnel. Para exponer nginx en la LAN hay que

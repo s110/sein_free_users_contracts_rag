@@ -77,8 +77,12 @@ def public_settings(tmp_path):
     )
 
 
-def build_public(settings: Settings):
-    client = build(settings, agent=FakeAgent([chain("generate", {"answer": "ok"}, start=False)]))
+def build_public(settings: Settings, peer: str = "127.0.0.1"):
+    client = build(
+        settings,
+        agent=FakeAgent([chain("generate", {"answer": "ok"}, start=False)]),
+        peer=peer,
+    )
     client.app.state.quota = DailyQuota(settings.quota_db_path, settings.chat_daily_limit)
     return client
 
@@ -127,6 +131,52 @@ class TestPublicChat:
                 "/api/chat", json={"question": "x"}, headers={"X-Real-IP": ip}
             )
             assert r.status_code == 200
+
+    def test_un_peer_no_confiable_no_elige_su_cuota(self, public_settings):
+        """La cabecera venía de cualquiera: quien alcanzara el backend sin
+        pasar por nginx (el 8000 está publicado en loopback) estrenaba cuota
+        en cada petición mandando una X-Real-IP distinta."""
+        client = build_public(public_settings, peer="203.0.113.7")
+        codes = [
+            client.post(
+                "/api/chat", json={"question": "x"}, headers={"X-Real-IP": f"9.9.9.{i}"}
+            ).status_code
+            for i in range(3)
+        ]
+        # chat_daily_limit=2: las dos primeras pasan contra la IP del socket,
+        # la tercera choca aunque la cabecera diga otra cosa cada vez.
+        assert codes == [200, 200, 429]
+
+    def test_un_peer_confiable_si_puede_reenviar_la_ip(self, public_settings):
+        client = build_public(public_settings, peer="172.18.0.5")
+        for i in range(3):
+            r = client.post(
+                "/api/chat", json={"question": "x"}, headers={"X-Real-IP": f"9.9.9.{i}"}
+            )
+            assert r.status_code == 200
+
+    def test_una_cabecera_que_no_es_ip_cae_al_peer(self, public_settings):
+        """El valor era la clave primaria de la tabla `quota`: sin validar,
+        el cliente escribía texto arbitrario en la base y en los logs."""
+        client = build_public(public_settings)
+        codes = [
+            client.post(
+                "/api/chat", json={"question": "x"}, headers={"X-Real-IP": f"no-soy-ip-{i}"}
+            ).status_code
+            for i in range(3)
+        ]
+        assert codes == [200, 200, 429]
+
+    def test_de_una_cadena_de_proxies_se_toma_el_ultimo_salto(self, public_settings):
+        client = build_public(public_settings)
+        r = client.post(
+            "/api/chat",
+            json={"question": "x"},
+            headers={"X-Real-IP": "1.1.1.1, 2.2.2.2"},
+        )
+        assert r.status_code == 200
+        assert client.app.state.quota.remaining("2.2.2.2") == 1
+        assert client.app.state.quota.remaining("1.1.1.1") == 2
 
     def test_sin_public_chat_el_anonimo_sigue_en_401(self, tmp_path):
         settings = Settings(api_key="clave-secreta", public_chat=False, _env_file=None)

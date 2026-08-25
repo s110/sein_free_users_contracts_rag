@@ -64,13 +64,19 @@ def token(text):
     }
 
 
-def build(settings: Settings, *, store=None, agent=None, ollama_ok=True):
-    """Monta la app saltándose el lifespan (que exige Qdrant y Ollama vivos)."""
+def build(settings: Settings, *, store=None, agent=None, ollama_ok=True, peer="127.0.0.1"):
+    """Monta la app saltándose el lifespan (que exige Qdrant y Ollama vivos).
+
+    `peer` es la IP del socket. El default de TestClient es "testclient", que
+    no es una IP: con él, `_client_ip` descartaría X-Real-IP por venir de un
+    peer no confiable y los tests de cuota pasarían por accidente (todos
+    compartiendo un único cubo) en vez de comprobar lo que dicen comprobar.
+    """
     app.state.settings = settings
     app.state.store = store or FakeStore()
     app.state.agent = agent or FakeAgent([])
     app.state.ollama_ok = ollama_ok
-    return TestClient(app)
+    return TestClient(app, client=(peer, 50000))
 
 
 @pytest.fixture
@@ -142,6 +148,53 @@ class TestAuth:
     def test_modo_anonimo_explicito_deja_pasar(self, ollama):
         client = build(Settings(api_key="", allow_anonymous=True))
         assert client.get("/api/documents").status_code == 200
+
+    def test_clave_con_bytes_no_ascii_da_401_y_no_500(self, settings, ollama):
+        """`secrets.compare_digest` lanza TypeError comparando str no ASCII y
+        Starlette decodifica las cabeceras como latin-1: un solo byte >= 0x80
+        convertía el 401 en un 500 sin autenticar."""
+        client = build(settings)
+        for raw in (b"caf\xe9", b"\xff\xfe", "ñ".encode("latin-1")):
+            r = client.get("/api/documents", headers={b"X-API-Key": raw})
+            assert r.status_code == 401, raw
+
+    def test_clave_correcta_con_cabecera_en_bytes_sigue_pasando(self, settings, ollama):
+        client = build(settings)
+        r = client.get("/api/documents", headers={b"X-API-Key": settings.api_key.encode()})
+        assert r.status_code == 200
+
+
+class TestCors:
+    """`add_middleware` dentro del lifespan lanza RuntimeError porque la pila
+    ya está construida: con RAG_CORS_ORIGINS definido el contenedor entraba en
+    crash-loop, y sin él el CORS configurado no existía nunca."""
+
+    def _app_con_cors(self, origins: str):
+        from fastapi import FastAPI
+
+        from rag.api.main import _configure_cors
+
+        a = FastAPI()
+        _configure_cors(a, Settings(cors_origins=origins, api_key="k", _env_file=None))
+
+        @a.get("/x")
+        async def x():
+            return {"ok": True}
+
+        return a
+
+    def test_el_origen_configurado_recibe_la_cabecera(self):
+        with TestClient(self._app_con_cors("https://panel.example")) as c:
+            r = c.get("/x", headers={"Origin": "https://panel.example"})
+            assert r.headers["access-control-allow-origin"] == "https://panel.example"
+
+    def test_un_origen_ajeno_no_la_recibe(self):
+        with TestClient(self._app_con_cors("https://panel.example")) as c:
+            r = c.get("/x", headers={"Origin": "https://malicioso.example"})
+            assert "access-control-allow-origin" not in r.headers
+
+    def test_sin_origenes_no_se_instala_middleware(self):
+        assert self._app_con_cors("").user_middleware == []
 
 
 class TestHealth:

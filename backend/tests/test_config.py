@@ -31,6 +31,45 @@ class TestValidateRuntime:
         Settings(api_key="k", cors_origins="*").validate_runtime()
         assert "cualquier página" in caplog.text
 
+    def test_avisa_de_que_documents_queda_abierto_sin_clave(self, caplog):
+        """El aviso decía que `/api/documents` "queda inaccesible", y era falso
+        en el 100% de los casos en que se emitía: sin clave el endpoint no se
+        cierra, se abre — y publica el RUC de cada usuario libre."""
+        Settings(api_key="", allow_anonymous=True, public_chat=True).validate_runtime()
+        assert "ABIERTOS" in caplog.text
+        assert "inaccesible" not in caplog.text
+
+
+class TestTrustedProxies:
+    def test_por_defecto_confia_en_redes_privadas_y_loopback(self):
+        s = Settings()
+        assert s.is_trusted_proxy("127.0.0.1")
+        assert s.is_trusted_proxy("172.18.0.5")
+        assert s.is_trusted_proxy("10.1.2.3")
+        assert s.is_trusted_proxy("192.168.1.9")
+        assert s.is_trusted_proxy("::1")
+
+    def test_no_confia_en_una_ip_publica(self):
+        assert not Settings().is_trusted_proxy("203.0.113.7")
+
+    def test_lo_que_no_es_una_ip_nunca_es_de_confianza(self):
+        s = Settings()
+        assert not s.is_trusted_proxy("testclient")
+        assert not s.is_trusted_proxy("")
+
+    def test_se_puede_estrechar_la_lista(self):
+        s = Settings(trusted_proxies="172.18.0.0/16")
+        assert s.is_trusted_proxy("172.18.0.5")
+        assert not s.is_trusted_proxy("127.0.0.1")
+
+    def test_un_cidr_ilegible_se_ignora_sin_tumbar_el_arranque(self, caplog):
+        """Un typo debe estrechar la confianza, nunca abrirla ni dejar el
+        servicio abajo."""
+        s = Settings(trusted_proxies="no-es-un-cidr, 127.0.0.0/8")
+        assert s.is_trusted_proxy("127.0.0.1")
+        assert not s.is_trusted_proxy("10.0.0.1")
+        assert "no es un CIDR válido" in caplog.text
+
 
 class TestCors:
     def test_por_defecto_no_hay_origenes(self):

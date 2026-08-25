@@ -134,10 +134,15 @@ class HybridStore:
             chunk = by_id[chunk_id]
             chunk.score = round(score, 5)
             results.append(chunk)
+        # Ni la query ni los valores de los filtros: la query conserva "nombres
+        # de empresas, RUCs y fechas tal cual" por diseño del ANALYZE_PROMPT y
+        # cae a la pregunta literal del usuario cuando el analizador no
+        # devuelve nada, así que esta línea reconstruía en `docker logs` el
+        # registro de quién preguntó por qué empresa que `agent.analyze`
+        # evita a propósito. Se loguean las claves, que bastan para depurar.
         log.info(
-            "search '%s' filtros=%s → dense=%d lexical=%d fused=%d",
-            query[:80],
-            filters,
+            "search: filtros=%s → dense=%d lexical=%d fused=%d",
+            sorted(filters or {}),
             len(dense),
             len(lexical),
             len(results),
@@ -186,10 +191,10 @@ class HybridStore:
             results.append(chunk)
             if len(results) >= want:
                 break
+        # Solo las claves de los filtros; ver el comentario en `search`.
         log.info(
-            "search_diverse '%s' filtros=%s → %d fragmentos de %d docs (pedidos %d)",
-            query[:80],
-            filters,
+            "search_diverse: filtros=%s → %d fragmentos de %d docs (pedidos %d)",
+            sorted(filters or {}),
             len(results),
             len(per_doc_count),
             n_docs,

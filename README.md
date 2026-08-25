@@ -117,6 +117,10 @@ Con `RAG_PUBLIC_CHAT=true`, `chat` acepta además visitantes sin clave con una
 cuota diaria por IP (`RAG_CHAT_DAILY_LIMIT`, default 5); `documents` y `meta`
 siguen exigiendo la clave porque publican RUC de usuarios libres.
 
+La única excepción es `RAG_ALLOW_ANONYMOUS=true`, que abre **toda** la API sin
+autenticación —`documents` y `meta` incluidos— y por eso hay que pedirlo a
+mano. Sin `RAG_API_KEY` no hay clave con la que exigir nada.
+
 ## Desarrollo
 
 ```bash

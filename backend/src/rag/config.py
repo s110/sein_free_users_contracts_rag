@@ -7,6 +7,7 @@ vía host.docker.internal.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from functools import lru_cache
 
@@ -89,10 +90,16 @@ class Settings(BaseSettings):
     chat_daily_limit: int = 5
     quota_db_path: str = "/data/quota/quota.sqlite3"
     # Cabecera de la que se toma la IP del cliente. nginx la reconstruye con
-    # real_ip desde CF-Connecting-IP y la reenvía como X-Real-IP; el backend
-    # solo es alcanzable desde la red interna de compose, así que confiar en
-    # ella no abre spoofing desde fuera.
+    # real_ip desde CF-Connecting-IP y la reenvía como X-Real-IP.
     trusted_ip_header: str = "x-real-ip"
+    # ...pero la cabecera solo vale si la manda un proxy nuestro. Antes se
+    # aceptaba de cualquiera con el argumento de que "el backend solo es
+    # alcanzable desde la red de compose": eso reubica la decisión de
+    # confianza, no la establece — el puerto 8000 está publicado en loopback
+    # y cualquier proceso del host podía elegir su propia cuota mandando
+    # X-Real-IP. Redes privadas por defecto: en este despliegue el peer real
+    # es el contenedor de nginx.
+    trusted_proxies: str = "127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"
 
     # --- Observabilidad ---
     log_level: str = "INFO"
@@ -100,6 +107,29 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        """CIDRs desde los que se acepta `trusted_ip_header`. Un CIDR ilegible
+        se descarta con aviso en vez de tumbar el arranque: un typo aquí debe
+        estrechar la confianza, nunca abrirla ni dejar el servicio abajo."""
+        nets = []
+        for raw in self.trusted_proxies.split(","):
+            cidr = raw.strip()
+            if not cidr:
+                continue
+            try:
+                nets.append(ipaddress.ip_network(cidr, strict=False))
+            except ValueError:
+                log.warning("RAG_TRUSTED_PROXIES: %r no es un CIDR válido, se ignora", cidr)
+        return nets
+
+    def is_trusted_proxy(self, host: str) -> bool:
+        try:
+            addr = ipaddress.ip_address(host)
+        except ValueError:
+            return False
+        return any(addr in net for net in self.trusted_proxy_networks)
 
     def validate_runtime(self) -> None:
         """Comprueba invariantes que deben impedir el arranque."""
@@ -133,9 +163,16 @@ class Settings(BaseSettings):
                 "Ponla solo en .env (600, gitignoreado), nunca en compose ni en el código."
             )
         if self.public_chat and not self.api_key:
+            # El texto anterior decía que "/api/documents queda inaccesible".
+            # Era falso en el 100% de los casos en que se emitía: sin clave,
+            # `require_api_key` deja pasar a todo el mundo (solo se llega aquí
+            # con RAG_ALLOW_ANONYMOUS=true), así que el endpoint no queda
+            # cerrado sino ABIERTO — y publica el RUC de cada usuario libre.
             log.warning(
-                "RAG_PUBLIC_CHAT=true sin RAG_API_KEY: nadie (ni tú) puede "
-                "saltarse la cuota diaria, y /api/documents queda inaccesible."
+                "RAG_PUBLIC_CHAT=true sin RAG_API_KEY: nadie (ni tú) puede saltarse "
+                "la cuota diaria, y /api/documents y /api/meta quedan ABIERTOS sin "
+                "autenticación (publican el RUC de los usuarios libres). Define "
+                "RAG_API_KEY si no es lo que quieres."
             )
 
 

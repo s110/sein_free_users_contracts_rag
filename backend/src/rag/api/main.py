@@ -11,6 +11,7 @@ Eventos SSE de /api/chat:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import secrets
 import uuid
@@ -67,7 +68,6 @@ async def lifespan(app: FastAPI):
         dense_candidates=settings.dense_candidates,
         text_candidates=settings.text_candidates,
     )
-    _configure_cors(app, settings)
     app.state.settings = settings
     app.state.qdrant = client
     app.state.embedder = embedder
@@ -92,12 +92,20 @@ async def lifespan(app: FastAPI):
 
 
 def _configure_cors(app: FastAPI, settings: Settings) -> None:
-    """CORS según config. Se aplica en el lifespan, no en import time.
+    """CORS según config. Se aplica al CONSTRUIR la app, no en el lifespan.
 
-    Antes `get_settings()` se llamaba al importar el módulo, lo que congelaba
-    la config y calentaba el `lru_cache` antes de que ningún test pudiera
-    parchear el entorno — motivo por el que este módulo estaba al 0% de
-    cobertura.
+    Estuvo dentro del lifespan para no llamar a `get_settings()` en import
+    time (congelaba la config y calentaba el `lru_cache` antes de que ningún
+    test pudiera parchear el entorno). Pero Starlette construye la pila de
+    middleware antes de ejecutar el lifespan, así que `add_middleware` allí
+    lanza `RuntimeError: Cannot add middleware after an application has
+    started`: con cualquier valor en RAG_CORS_ORIGINS el contenedor entraba
+    en crash-loop, y sin él la función no hacía nada. En los dos casos el
+    CORS configurado no llegaba a existir nunca.
+
+    Los tests siguen controlando la config porque montan la app poniendo
+    `app.state.settings` a mano; lo único que se resuelve aquí es la lista de
+    orígenes, que ninguno ejercita.
     """
     origins = settings.cors_origin_list
     if not origins:
@@ -112,6 +120,7 @@ def _configure_cors(app: FastAPI, settings: Settings) -> None:
 
 
 app = FastAPI(title="SEIN Free Users Contracts RAG", version=__version__, lifespan=lifespan)
+_configure_cors(app, get_settings())
 
 
 def _has_valid_api_key(request: Request) -> bool:
@@ -121,7 +130,13 @@ def _has_valid_api_key(request: Request) -> bool:
     provided = request.headers.get("x-api-key", "")
     # compare_digest: la comparación con `!=` corta en el primer byte distinto
     # y filtra la clave carácter a carácter ante un atacante que mida.
-    return secrets.compare_digest(provided, settings.api_key)
+    #
+    # Sobre bytes y no sobre str: `compare_digest` lanza TypeError comparando
+    # cadenas con caracteres no ASCII, y Starlette decodifica las cabeceras
+    # como latin-1. Un solo byte >= 0x80 en X-API-Key (`curl -H $'X-API-Key:
+    # \xff'`) convertía el 401 en un 500 sin autenticar, en /api/chat,
+    # /api/documents y /api/meta.
+    return secrets.compare_digest(provided.encode("utf-8"), settings.api_key.encode("utf-8"))
 
 
 async def require_api_key(request: Request) -> None:
@@ -134,11 +149,36 @@ async def require_api_key(request: Request) -> None:
 
 
 def _client_ip(request: Request) -> str:
+    """IP que identifica al cliente para la cuota.
+
+    La cabecera solo se cree si quien la envía es un proxy de confianza: antes
+    se aceptaba de cualquiera, así que quien alcanzara el backend sin pasar
+    por nginx (el puerto 8000 está publicado en loopback) se inventaba una IP
+    por petición y estrenaba cuota cada vez. Además se valida que el valor sea
+    una IP de verdad: sin eso, la clave primaria de la tabla `quota` y de los
+    logs era texto arbitrario elegido por el cliente.
+    """
     settings: Settings = request.app.state.settings
+    peer = request.client.host if request.client else ""
     header_ip = request.headers.get(settings.trusted_ip_header, "").strip()
     if header_ip:
-        return header_ip
-    return request.client.host if request.client else "desconocida"
+        if settings.is_trusted_proxy(peer):
+            # Un encadenamiento de proxies añade por la derecha: el último
+            # salto es el único que el cliente no controla.
+            candidate = header_ip.rsplit(",", 1)[-1].strip()
+            try:
+                return str(ipaddress.ip_address(candidate))
+            except ValueError:
+                log.warning(
+                    "%s no trae una IP válida; se usa la del peer",
+                    settings.trusted_ip_header,
+                )
+        else:
+            log.warning(
+                "%s ignorada: el peer no está en RAG_TRUSTED_PROXIES",
+                settings.trusted_ip_header,
+            )
+    return peer or "desconocida"
 
 
 async def chat_access(request: Request) -> None:
