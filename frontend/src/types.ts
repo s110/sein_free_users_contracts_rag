@@ -13,11 +13,21 @@ export interface SourceRef {
   snippet: string;
 }
 
+/** Afirmación que no resistió el contraste con la fuente que ella misma citó. */
+export interface ClaimIssue {
+  texto: string;
+  estado: "refutada" | "ausente" | "sin_cita";
+  motivo: string;
+}
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources?: SourceRef[];
   grounded?: boolean | null;
+  claimsTotal?: number;
+  claimsOk?: number;
+  claimIssues?: ClaimIssue[];
   noContext?: boolean;
   status?: string; // paso actual del agente mientras genera
   streaming?: boolean;
@@ -42,6 +52,9 @@ export type SseEvent =
         no_context: boolean;
         rewrites: number;
         sources: SourceRef[];
+        claims_total: number;
+        claims_ok: number;
+        claim_issues: ClaimIssue[];
       };
     }
   | { type: "error"; data: { message: string } };

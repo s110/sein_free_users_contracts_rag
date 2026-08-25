@@ -25,6 +25,12 @@ _NAMESPACE = uuid.UUID("7c9e6a2e-53c1-45f7-9d3a-1b2f0e8a4c5d")
 
 _PAGE_HEADER_RE = re.compile(r"^#{1,6}\s*P[áa]gina\s+(\d+)\s*$", re.IGNORECASE)
 _HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+# El OCR emite las tablas como HTML; las de otras fuentes vienen en pipes.
+_TABLE_START_RE = re.compile(r"^\s*(?:<table\b|\|)", re.IGNORECASE)
+
+
+def _is_table(text: str) -> bool:
+    return bool(_TABLE_START_RE.match(text))
 
 
 def chunk_id_for(doc_id: str, source_hash: str, index: int) -> str:
@@ -56,23 +62,41 @@ class _Packer:
                 self.chunks.append(_to_dict([_Block(piece, block.section, block.page)]))
             return
         if self._len + len(block.text) > self.max_chars and self._buf:
-            self.flush(carry_overlap=True)
+            self.flush(carry_overlap=True, keep_last_whole=_is_table(block.text))
         self._buf.append(block)
         self._len += len(block.text) + 2
 
-    def flush(self, carry_overlap: bool = False) -> None:
+    def flush(self, carry_overlap: bool = False, keep_last_whole: bool = False) -> None:
         if not self._buf:
             return
         self.chunks.append(_to_dict(self._buf))
         if carry_overlap and self.overlap_chars > 0:
-            # Los últimos bloques (hasta overlap_chars) reabren el buffer
+            last = self._buf[-1]
+            budget = self.overlap_chars
+            if keep_last_whole:
+                # Una tabla sin la frase que la introduce es una tabla sin
+                # dueño. En el contrato de LA ARENA la tabla de potencias de
+                # Celepsa abría un chunk, separada de su "1.5 ... el contrato
+                # con Celepsa contempla la siguiente potencia contratada:" —
+                # y el asistente la presentó como potencia de Pluz. El párrafo
+                # que precede a una tabla viaja con ella aunque exceda el
+                # overlap.
+                budget = max(budget, min(len(last.text), self.max_chars // 2))
             carried: list[_Block] = []
             size = 0
             for b in reversed(self._buf):
-                if size + len(b.text) > self.overlap_chars:
+                if size + len(b.text) > budget:
                     break
                 carried.insert(0, b)
                 size += len(b.text)
+            if not carried:
+                # El bloque anterior no cabe entero: se arrastra su FINAL, que
+                # es donde vive la frase que presenta lo que viene. Antes el
+                # bucle rompía en la primera iteración y el chunk siguiente
+                # empezaba sin ningún contexto.
+                tail = last.text[-budget:]
+                carried = [_Block(text="…" + tail, section=last.section, page=last.page)]
+                size = len(tail) + 1
             self._buf = carried
             self._len = size
         else:

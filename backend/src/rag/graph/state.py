@@ -30,4 +30,8 @@ class AgentState(TypedDict, total=False):
     # Generación
     answer: str
     grounded: bool | None
+    # Verificación adversaria por afirmación (ver ContractsAgent.verify)
+    claims_total: int
+    claims_ok: int
+    claim_issues: list[dict]  # [{texto, estado, motivo}] de las no sustentadas
     no_context: bool  # no se encontró nada relevante → respuesta honesta

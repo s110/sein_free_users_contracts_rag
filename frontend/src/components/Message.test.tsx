@@ -146,20 +146,65 @@ describe("Message", () => {
     expect(screen.queryByText(/Redactando…/)).not.toBeInTheDocument();
   });
 
-  it("muestra el badge verificado cuando grounded es true", () => {
-    render(<Message message={assistant({ content: "ok", grounded: true })} onCite={() => {}} onShowSources={() => {}} />);
-    expect(screen.getByText(/Verificado contra fuentes/)).toBeInTheDocument();
+  it("cuenta las afirmaciones contrastadas cuando todas se sustentan", () => {
+    render(
+      <Message
+        message={assistant({ content: "ok", grounded: true, claimsTotal: 7, claimsOk: 7 })}
+        onCite={() => {}}
+        onShowSources={() => {}}
+      />,
+    );
+    expect(screen.getByText(/7 afirmaciones contrastadas/)).toBeInTheDocument();
   });
 
-  it("muestra la advertencia cuando grounded es false", () => {
-    render(<Message message={assistant({ content: "ok", grounded: false })} onCite={() => {}} onShowSources={() => {}} />);
-    expect(screen.getByText(/Verificación no concluyente/)).toBeInTheDocument();
+  it("detalla qué afirmación contradice la fuente citada", async () => {
+    render(
+      <Message
+        message={assistant({
+          content: "ok",
+          grounded: false,
+          claimsTotal: 3,
+          claimsOk: 2,
+          claimIssues: [
+            {
+              texto: "la potencia contratada con Pluz en 2026 es 4.5 MW",
+              estado: "refutada",
+              motivo: "esa tabla es del contrato con Celepsa",
+            },
+          ],
+        })}
+        onCite={() => {}}
+        onShowSources={() => {}}
+      />,
+    );
+    expect(screen.getByText(/1 de 3 sin sustento/)).toBeInTheDocument();
+    await userEvent.click(screen.getByText(/Qué no se pudo verificar/));
+    expect(screen.getByText(/Contradice la fuente/)).toBeInTheDocument();
+    expect(screen.getByText(/esa tabla es del contrato con Celepsa/)).toBeInTheDocument();
   });
 
-  it("no muestra badges cuando grounded es null", () => {
+  it("una afirmación sin cita se reporta como tal, no como verificada", () => {
+    render(
+      <Message
+        message={assistant({
+          content: "ok",
+          grounded: null,
+          claimsTotal: 1,
+          claimsOk: 0,
+          claimIssues: [{ texto: "algo", estado: "sin_cita", motivo: "" }],
+        })}
+        onCite={() => {}}
+        onShowSources={() => {}}
+      />,
+    );
+    expect(screen.getByText(/Sin cita/)).toBeInTheDocument();
+    expect(screen.queryByText(/afirmaciones contrastadas/)).not.toBeInTheDocument();
+  });
+
+  it("sin verificación no promete nada", () => {
     render(<Message message={assistant({ content: "ok", grounded: null })} onCite={() => {}} onShowSources={() => {}} />);
-    expect(screen.queryByText(/Verificado contra fuentes/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Verificación no concluyente/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/contrastada/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sin sustento/)).not.toBeInTheDocument();
   });
 
   it("muestra el error y oculta el pie cuando falla", () => {

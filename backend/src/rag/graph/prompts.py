@@ -2,7 +2,7 @@
 para que un cambio de prompt sea un diff revisable.
 """
 
-PROMPT_VERSION = "2026-08-26.1"
+PROMPT_VERSION = "2026-08-26.2"
 
 ANALYZE_PROMPT = """\
 Eres el analizador de consultas de un sistema RAG sobre contratos de suministro \
@@ -99,6 +99,16 @@ documentos") y, si una NOTA DEL SISTEMA indica cuántos hay en el índice, usa e
 7. Formato: puedes usar Markdown — **negritas**, listas y tablas se renderizan. Para \
 comparar varios documentos usa una tabla. Los marcadores de cita [n] van FUERA de las \
 negritas y funcionan también dentro de celdas de tabla.
+8. ATRIBUCIÓN (la causa nº1 de error en estos documentos): la cabecera de un \
+fragmento identifica las partes DEL DOCUMENTO, no el sujeto de cada cifra que \
+contiene. Un contrato TRANSCRIBE con frecuencia cláusulas y tablas de contratos \
+de OTROS suministradores ("Contratos Primigenios", suministro compartido, cesión \
+de posición contractual). Antes de atribuir una cifra o una tabla, localiza en el \
+TEXTO la frase que la introduce y comprueba a qué parte se la asigna: si el texto \
+dice "el contrato con Celepsa contempla la siguiente potencia contratada", esa \
+tabla es de Celepsa aunque el documento sea de otro suministrador. Si el fragmento \
+lleva una ADVERTENCIA DE ATRIBUCIÓN, trátala como obligatoria. Cuando no puedas \
+determinar el sujeto de un dato con el texto a la vista, NO lo atribuyas: dilo.
 
 CÓMO FUNCIONAN ESTOS DOCUMENTOS (casuística del registro de Osinergmin):
 - Un CONTRATO (versión 00) es el acuerdo base; una ADENDA (versiones 01, 02...) \
@@ -123,19 +133,63 @@ PREGUNTA: {question}
 {selector_note}
 Responde citando con [n]."""
 
-GROUNDEDNESS_PROMPT = """\
-Eres un verificador de fidelidad (groundedness) de un RAG.
+EXTRACT_CLAIMS_PROMPT = """\
+Eres un extractor de afirmaciones verificables. Descompón la RESPUESTA en \
+afirmaciones fácticas ATÓMICAS: una sola cifra, fecha, nombre o cláusula por \
+afirmación.
 
-CONTEXTO:
-{context}
+REGLAS:
+- Cada afirmación debe ser AUTÓNOMA y llevar su SUJETO EXPLÍCITO. Mal: "la \
+potencia es 3.5 MW". Bien: "la potencia contratada del Cliente con Celepsa en \
+2025 es 3.5 MW".
+- "citas": lista con los números de fragmento [n] que la RESPUESTA asocia a esa \
+afirmación. Si la afirmación no lleva ningún [n], usa [].
+- Cada fila de una tabla con datos es una afirmación independiente.
+- IGNORA: saludos, sugerencias de reformular la búsqueda, comentarios sobre el \
+propio contexto ("no aparece en los fragmentos", "el texto se corta") y opiniones.
+- Máximo 25 afirmaciones. Si hay más, prioriza las que contienen cifras o fechas.
 
-RESPUESTA GENERADA:
+RESPUESTA A DESCOMPONER:
+---
 {answer}
+---
 
-¿Cada afirmación fáctica de la respuesta está sustentada por el contexto? \
-Frases como "el contexto no contiene esa información" cuentan como sustentadas.
+Responde SOLO JSON: {{"afirmaciones": [{{"texto": "...", "citas": [1]}}]}}"""
 
-Responde SOLO JSON: {{"grounded": true}} o {{"grounded": false, "reason": "..."}}"""
+REFUTE_PROMPT = """\
+Eres un VERIFICADOR ADVERSARIO. Tu trabajo NO es aprobar afirmaciones: es \
+REFUTARLAS. Se te evalúa por los errores que encuentras, no por los vistos buenos \
+que repartes.
+
+ÚNICA prueba admisible — fragmento [{n}] ({desc}):
+---
+{fragment}
+---
+
+AFIRMACIONES que dicen sustentarse en ESTE fragmento:
+{claims}
+
+Estado de cada afirmación:
+- "sustentada": el fragmento la afirma de forma explícita, con el MISMO sujeto y \
+el MISMO valor.
+- "refutada": el fragmento dice algo distinto, o asigna ese dato a OTRA parte, \
+otro año u otro concepto.
+- "ausente": el fragmento no contiene esa información.
+
+REGLA CRÍTICA DE ATRIBUCIÓN — la causa nº1 de error en estos documentos: un \
+contrato TRANSCRIBE tablas y cifras de contratos de TERCEROS (los "Contratos \
+Primigenios" de otros suministradores). Que una cifra APAREZCA en el fragmento NO \
+la vuelve sustentada: localiza la frase que la introduce y comprueba a QUIÉN se la \
+atribuye el texto. Una tabla presentada como "el contrato con X contempla la \
+siguiente potencia" NO sustenta ninguna afirmación sobre la potencia de otra \
+empresa, por mucho que los números coincidan.
+
+Ante la duda, NUNCA marques "sustentada".
+
+Responde SOLO JSON: \
+{{"veredictos": [{{"i": 1, "estado": "sustentada", "motivo": "máx 15 palabras"}}]}}"""
+
+CLAIM_STATES = ("sustentada", "refutada", "ausente", "sin_cita")
 
 OUT_OF_SCOPE_ANSWER = (
     "Este asistente responde únicamente preguntas sobre los contratos de suministro "

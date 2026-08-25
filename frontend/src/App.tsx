@@ -135,6 +135,9 @@ export default function App() {
                 content: ev.data.answer,
                 sources: ev.data.sources,
                 grounded: ev.data.grounded,
+                claimsTotal: ev.data.claims_total,
+                claimsOk: ev.data.claims_ok,
+                claimIssues: ev.data.claim_issues,
                 noContext: ev.data.no_context,
                 streaming: false,
                 status: undefined,
@@ -170,6 +173,17 @@ export default function App() {
 
   const stop = () => abortRef.current?.abort();
 
+  const nuevaConversacion = useCallback(() => {
+    // El historial viaja completo en cada pregunta: sin forma de vaciarlo, un
+    // tema viejo seguía condicionando las respuestas nuevas (y pagándose como
+    // tokens de entrada en cada turno).
+    abortRef.current?.abort();
+    setMessages([]);
+    setPanelSources([]);
+    setHighlighted(null);
+    setInput("");
+  }, []);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -190,6 +204,15 @@ export default function App() {
           {panelSources.length > 0 && !panelOpen && (
             <button className="btn-fuentes" onClick={() => setPanelOpen(true)}>
               Fuentes ({panelSources.length})
+            </button>
+          )}
+          {messages.length > 0 && (
+            <button
+              className="btn-nueva"
+              onClick={nuevaConversacion}
+              title="Vaciar la conversación y empezar de cero"
+            >
+              + Nueva conversación
             </button>
           )}
           <button className="icon-btn" onClick={() => setShowSettings((v) => !v)} aria-label="Ajustes">

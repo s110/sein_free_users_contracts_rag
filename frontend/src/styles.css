@@ -156,6 +156,28 @@ select:focus-visible, textarea:focus-visible {
   cursor: pointer; font-family: inherit;
 }
 .badge-fuentes:hover { border-color: var(--accent); }
+.badge-err { background: rgba(248, 81, 73, 0.15); color: var(--err); }
+
+/* Informe del verificador adversario: qué afirmación no se sostuvo y por qué. */
+.claim-issues { margin-top: 0.5rem; font-size: 0.8rem; }
+.claim-issues summary { color: var(--text-dim); cursor: pointer; }
+.claim-issues summary:hover { color: var(--text); }
+.claim-issues ul { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.claim-issues li {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  border-left: 2px solid var(--warn); padding-left: 0.6rem;
+}
+.claim-issues li.claim-refutada { border-left-color: var(--err); }
+.claim-estado { font-weight: 600; color: var(--warn); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+.claim-refutada .claim-estado { color: var(--err); }
+.claim-texto { color: var(--text); }
+.claim-motivo { color: var(--text-dim); font-style: italic; }
+
+.btn-nueva {
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.78rem; cursor: pointer;
+}
+.btn-nueva:hover { border-color: var(--accent); color: var(--accent); }
 .badge-ok { background: rgba(63, 185, 80, 0.15); color: var(--ok); }
 .badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
 .badge-muted { background: var(--surface-2); color: var(--text-dim); }

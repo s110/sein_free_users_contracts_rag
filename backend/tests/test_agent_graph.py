@@ -206,37 +206,93 @@ class TestGenerate:
         assert a.llm_generate.prompts  # no revienta con historial presente
 
 
-class TestVerify:
-    async def test_marca_fundamentada(self):
-        a = agent(json_replies=['{"grounded": true}'])
-        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "x"})
-        assert out["grounded"] is True
+EXTRACCION_UNA = '{"afirmaciones": [{"texto": "la potencia es 5 MW", "citas": [1]}]}'
 
-    async def test_marca_no_fundamentada(self):
-        a = agent(json_replies=['{"grounded": false}'])
-        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "x"})
+
+class TestVerify:
+    async def test_todas_sustentadas_marca_fundamentada(self):
+        a = agent(
+            json_replies=[EXTRACCION_UNA, '{"veredictos": [{"i": 1, "estado": "sustentada"}]}']
+        )
+        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "5 MW [1]"})
+        assert out["grounded"] is True
+        assert (out["claims_ok"], out["claims_total"]) == (1, 1)
+        assert out["claim_issues"] == []
+
+    async def test_una_refutada_marca_no_fundamentada_y_la_reporta(self):
+        a = agent(
+            json_replies=[
+                EXTRACCION_UNA,
+                '{"veredictos": [{"i": 1, "estado": "refutada",'
+                ' "motivo": "la tabla es de Celepsa"}]}',
+            ]
+        )
+        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "5 MW [1]"})
         assert out["grounded"] is False
+        assert out["claims_ok"] == 0
+        assert out["claim_issues"][0]["estado"] == "refutada"
+        assert "Celepsa" in out["claim_issues"][0]["motivo"]
+
+    async def test_ausente_no_concluye_pero_no_certifica(self):
+        """Ni verde ni rojo: el dato no está en el fragmento que la respuesta
+        citó, y certificarlo sería peor que admitir que no se pudo comprobar."""
+        a = agent(json_replies=[EXTRACCION_UNA, '{"veredictos": [{"i": 1, "estado": "ausente"}]}'])
+        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "5 MW [1]"})
+        assert out["grounded"] is None
+        assert out["claim_issues"][0]["estado"] == "ausente"
+
+    async def test_afirmacion_sin_cita_queda_sin_verificar(self):
+        a = agent(json_replies=['{"afirmaciones": [{"texto": "algo", "citas": []}]}'])
+        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "algo"})
+        assert out["claim_issues"][0]["estado"] == "sin_cita"
+        assert out["grounded"] is None
+        # Sin cita no hay a qué fragmento preguntar: una sola llamada al modelo.
+        assert len(a.llm_json.prompts) == 1
+
+    async def test_cita_fuera_de_rango_no_se_verifica_contra_nada(self):
+        a = agent(json_replies=['{"afirmaciones": [{"texto": "algo", "citas": [7]}]}'])
+        out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "algo [7]"})
+        assert out["claim_issues"][0]["estado"] == "sin_cita"
 
     async def test_json_ilegible_deja_el_veredicto_en_none(self):
         a = agent(json_replies=["vaya usted a saber"])
         out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "x"})
         assert out["grounded"] is None
+        assert out["claims_total"] == 0
 
     async def test_un_fallo_del_modelo_no_tumba_la_respuesta(self):
         a = agent(json_replies=[RuntimeError("Ollama caído")])
         out = await a.verify({"relevant_documents": [make_retrieved(1)], "answer": "x"})
         assert out["grounded"] is None
 
-    async def test_el_verificador_ve_todas_las_fuentes(self):
-        """El corte plano `format_context(docs)[:12000]` dejaba fuera las
-        últimas fuentes enteras, así que una respuesta correcta que citaba [5]
-        y [6] se marcaba como no verificada."""
-        docs = [make_retrieved(n, text=f"contenido {n} " + "x" * 4000) for n in range(1, 7)]
-        a = agent(json_replies=['{"grounded": true}'])
-        await a.verify({"relevant_documents": docs, "answer": "cita [6]"})
-        prompt = a.llm_json.prompts[0]
-        assert "contenido 1" in prompt
-        assert "contenido 6" in prompt
+    async def test_cada_afirmacion_se_contrasta_SOLO_con_el_fragmento_que_cita(self):
+        """La propiedad que impide el error Celepsa→Pluz: con el contexto
+        entero delante bastaba que la cifra apareciera en CUALQUIER documento.
+        El refutador solo puede ver el fragmento citado."""
+        docs = [make_retrieved(n, text=f"contenido {n}") for n in range(1, 4)]
+        a = agent(
+            json_replies=[
+                '{"afirmaciones": [{"texto": "dato del tercero", "citas": [3]}]}',
+                '{"veredictos": [{"i": 1, "estado": "sustentada"}]}',
+            ]
+        )
+        await a.verify({"relevant_documents": docs, "answer": "dato [3]"})
+        prompt_refutacion = a.llm_json.prompts[1]
+        assert "contenido 3" in prompt_refutacion
+        assert "contenido 1" not in prompt_refutacion
+        assert "contenido 2" not in prompt_refutacion
+
+    async def test_basta_que_uno_de_los_fragmentos_citados_la_sustente(self):
+        docs = [make_retrieved(1), make_retrieved(2)]
+        a = agent(
+            json_replies=[
+                '{"afirmaciones": [{"texto": "x", "citas": [1, 2]}]}',
+                '{"veredictos": [{"i": 1, "estado": "ausente"}]}',
+                '{"veredictos": [{"i": 1, "estado": "sustentada"}]}',
+            ]
+        )
+        out = await a.verify({"relevant_documents": docs, "answer": "x [1][2]"})
+        assert out["grounded"] is True
 
 
 class TestNoContext:

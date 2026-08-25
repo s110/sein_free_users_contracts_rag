@@ -72,14 +72,30 @@ describe("App", () => {
         'data: {"type":"status","data":{"step":"retrieve","detail":"Buscando"}}\n\n',
         'data: {"type":"token","data":{"text":"La potencia "}}\n\n',
         'data: {"type":"token","data":{"text":"es 10 MW [1]."}}\n\n',
-        'data: {"type":"end","data":{"answer":"La potencia es 10 MW [1].","grounded":true,"no_context":false,"rewrites":0,"sources":[{"n":1,"source_file":"c1.md","doc_id":"d1","section":null,"page_start":2,"page_end":2,"usuario_libre":null,"suministrador":null,"fecha_suscripcion":null,"tipo":null,"source_url":null,"snippet":"s"}]}}\n\n',
+        'data: {"type":"end","data":{"answer":"La potencia es 10 MW [1].","grounded":true,"no_context":false,"rewrites":0,"claims_total":1,"claims_ok":1,"claim_issues":[],"sources":[{"n":1,"source_file":"c1.md","doc_id":"d1","section":null,"page_start":2,"page_end":2,"usuario_libre":null,"suministrador":null,"fecha_suscripcion":null,"tipo":null,"source_url":null,"snippet":"s"}]}}\n\n',
       ]),
     );
     render(<App />);
     await ask();
     expect(await screen.findByText(/La potencia es 10 MW/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("c1.md")).toBeInTheDocument());
-    expect(screen.getByText(/Verificado contra fuentes/)).toBeInTheDocument();
+    expect(screen.getByText(/1 afirmacion contrastada/)).toBeInTheDocument();
+  });
+
+  it("nueva conversación vacía los mensajes y el panel de fuentes", async () => {
+    installFetch(() =>
+      sse([
+        'data: {"type":"end","data":{"answer":"respuesta previa","grounded":null,"no_context":false,"rewrites":0,"claims_total":0,"claims_ok":0,"claim_issues":[],"sources":[]}}\n\n',
+      ]),
+    );
+    render(<App />);
+    await ask("algo antiguo");
+    await screen.findByText("respuesta previa");
+    await userEvent.click(screen.getByRole("button", { name: /Nueva conversación/ }));
+    expect(screen.queryByText("respuesta previa")).not.toBeInTheDocument();
+    expect(screen.queryByText("algo antiguo")).not.toBeInTheDocument();
+    // Vuelve el estado inicial con sus sugerencias
+    expect(screen.getByText(/Pregunta sobre los contratos/)).toBeInTheDocument();
   });
 
   it("muestra el error del backend sin romper la conversación", async () => {

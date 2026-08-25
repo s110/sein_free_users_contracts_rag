@@ -32,6 +32,7 @@ from ..ingestion.embedder import OllamaEmbedder
 from ..logging_setup import setup_logging
 from ..retrieval.store import HybridStore
 from ..schemas import ChatRequest, RetrievedChunk, SourceRef
+from ..textnorm import html_tables_to_markdown
 from .quota import DailyQuota
 
 log = logging.getLogger("rag.api")
@@ -230,7 +231,11 @@ def _sources_from(docs: list[RetrievedChunk]) -> list[dict]:
             fecha_suscripcion=d.fecha_suscripcion,
             tipo=d.tipo,
             source_url=d.source_url,
-            snippet=d.text[:300],
+            # Las tablas del OCR son HTML crudo y el panel de fuentes las
+            # descartaba al renderizar Markdown: el usuario no podía comprobar
+            # con sus ojos la cifra citada, que es justo lo que vuelve creíble
+            # al producto. Convertidas se ven; por eso el snippet es más largo.
+            snippet=html_tables_to_markdown(d.text)[:700],
         ).model_dump()
         for i, d in enumerate(docs, start=1)
     ]
@@ -365,6 +370,11 @@ async def chat(request: Request, body: ChatRequest):
                     "no_context": bool(final.get("no_context")),
                     "rewrites": final.get("rewrites", 0),
                     "sources": _sources_from(final.get("relevant_documents") or []),
+                    # Informe del verificador adversario: cuántas afirmaciones
+                    # se contrastaron una a una y cuáles no lo resistieron.
+                    "claims_total": final.get("claims_total", 0),
+                    "claims_ok": final.get("claims_ok", 0),
+                    "claim_issues": final.get("claim_issues") or [],
                 },
             )
         except Exception:  # noqa: BLE001

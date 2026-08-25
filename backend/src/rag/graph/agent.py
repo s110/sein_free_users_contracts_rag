@@ -27,12 +27,19 @@ from ..config import Settings
 from ..llm import build_llm
 from ..retrieval.store import HybridStore
 from ..schemas import RetrievedChunk
+from ..textnorm import find_third_parties, html_tables_to_markdown
 from . import prompts
 from .state import AgentState
 
 log = logging.getLogger("rag.agent")
 
 MAX_HISTORY_MESSAGES = 8
+
+# Techo de afirmaciones verificadas por respuesta: acota el costo del
+# verificador (una llamada por fragmento citado) y el tamaño del informe.
+MAX_CLAIMS = 25
+# Un chunk son ~3200 caracteres; este techo solo protege de un chunk anómalo.
+VERIFY_FRAGMENT_CHARS = 6000
 
 
 def parse_json_reply(text: str) -> dict:
@@ -74,12 +81,49 @@ def strip_ghost_citations(answer: str, n_sources: int) -> str:
     return _CITATION_MARKER_RE.sub(_keep_or_drop, answer)
 
 
+def describe_chunk(d: RetrievedChunk) -> str:
+    """Identificación legible de un fragmento: tipo, partes y fecha."""
+    desc = d.tipo or "documento"
+    if d.usuario_libre:
+        desc += f" de {d.usuario_libre}"
+    if d.suministrador:
+        desc += f" con {d.suministrador}"
+    if d.fecha_suscripcion:
+        desc += f", suscrito el {d.fecha_suscripcion}"
+    return desc
+
+
+def attribution_warning(d: RetrievedChunk) -> str:
+    """Advertencia cuando el fragmento nombra empresas ajenas al documento.
+
+    El caso real que motivó esto: el contrato de LA ARENA con Pluz transcribe
+    en su cláusula primera las tablas de potencia de los "Contratos
+    Primigenios" con Orygen y Celepsa. La cabecera del fragmento dice "con
+    Pluz Energía", y el modelo presentaba la tabla de Celepsa como potencia
+    contratada de Pluz — cifras correctas, empresa equivocada, que es la peor
+    clase de error que puede cometer este producto.
+    """
+    terceros = find_third_parties(d.text, [d.suministrador, d.usuario_libre])
+    if not terceros:
+        return ""
+    propio = d.suministrador or "el suministrador de este documento"
+    return (
+        f"\n⚠ ADVERTENCIA DE ATRIBUCIÓN: este fragmento MENCIONA a terceros "
+        f"({'; '.join(terceros)}). Las cifras, tablas y cláusulas que el texto "
+        f"asigne a ellos NO son de {propio}. Localiza en el texto la frase que "
+        f"introduce cada dato antes de atribuirlo."
+    )
+
+
 def format_context(docs: list[RetrievedChunk]) -> str:
     """Cada fragmento entra con su metadata en la cabecera.
 
     Sin esto el modelo respondía "no existe información sobre las fechas de
     suscripción" con las fechas a un campo de distancia: estaban en el payload
     y en el panel de fuentes, pero jamás llegaban al prompt.
+
+    Las tablas llegan como HTML del OCR y se convierten a Markdown: el modelo
+    las lee mejor y son las mismas que ve el usuario en el panel de fuentes.
     """
     parts = []
     for i, d in enumerate(docs, start=1):
@@ -88,17 +132,10 @@ def format_context(docs: list[RetrievedChunk]) -> str:
             page = f", pág. {d.page_start}" + (
                 f"-{d.page_end}" if d.page_end and d.page_end != d.page_start else ""
             )
-        desc = d.tipo or "documento"
-        if d.usuario_libre:
-            desc += f" de {d.usuario_libre}"
-        if d.suministrador:
-            desc += f" con {d.suministrador}"
-        if d.fecha_suscripcion:
-            desc += f", suscrito el {d.fecha_suscripcion}"
-        header = f"[{i}] {desc} ({d.source_file}{page})"
+        header = f"[{i}] {describe_chunk(d)} ({d.source_file}{page})"
         if d.section:
             header += f" — {d.section}"
-        parts.append(f"{header}\n{d.text}")
+        parts.append(f"{header}{attribution_warning(d)}\n{html_tables_to_markdown(d.text)}")
     return "\n\n---\n\n".join(parts)
 
 
@@ -372,33 +409,153 @@ class ContractsAgent:
         reply = await self.llm_generate.ainvoke(messages)
         return {"answer": strip_ghost_citations(str(reply.content), len(docs))}
 
-    async def verify(self, state: AgentState) -> dict:
-        try:
-            reply = await self.llm_json.ainvoke(
-                [
-                    HumanMessage(
-                        content=prompts.GROUNDEDNESS_PROMPT.format(
-                            # Las notas del sistema también son contexto citable:
-                            # sin ellas, "el índice tiene 581 documentos" (cifra
-                            # que la nota le dio al generador) marcaba TODA
-                            # respuesta multi-documento como no sustentada.
-                            context=(state.get("selector_note") or "")
-                            + (state.get("multi_doc_note") or "")
-                            + truncate_context(
-                                state["relevant_documents"], self.settings.verify_context_chars
-                            ),
-                            answer=state["answer"],
-                        )
+    async def _extract_claims(self, answer: str, n_docs: int) -> list[dict]:
+        """Descompone la respuesta en afirmaciones atómicas con su cita."""
+        reply = await self.llm_json.ainvoke(
+            [HumanMessage(content=prompts.EXTRACT_CLAIMS_PROMPT.format(answer=answer))]
+        )
+        data = parse_json_reply(str(reply.content))
+        raw = data.get("afirmaciones")
+        if not isinstance(raw, list):
+            return []
+        claims: list[dict] = []
+        for item in raw[:MAX_CLAIMS]:
+            if not isinstance(item, dict):
+                continue
+            texto = str(item.get("texto") or "").strip()
+            if not texto:
+                continue
+            citas = []
+            for c in item.get("citas") or []:
+                try:
+                    n = int(c)
+                except (TypeError, ValueError):
+                    continue
+                # Una cita fuera de rango es una cita inventada: se descarta,
+                # y la afirmación queda como "sin_cita".
+                if 1 <= n <= n_docs and n not in citas:
+                    citas.append(n)
+            claims.append({"texto": texto, "citas": citas})
+        return claims
+
+    async def _refute(self, n: int, doc: RetrievedChunk, group: list[tuple[int, dict]]) -> dict:
+        """Somete a refutación las afirmaciones que citan el fragmento `n`.
+
+        El verificador ve ÚNICAMENTE ese fragmento. Con el contexto completo
+        delante bastaba que la cifra apareciera en cualquier documento para
+        darla por buena, que es exactamente como una tabla de Celepsa acabó
+        certificada como potencia contratada de Pluz.
+        """
+        listado = "\n".join(f"{i}. {c['texto']}" for i, (_, c) in enumerate(group, start=1))
+        reply = await self.llm_json.ainvoke(
+            [
+                HumanMessage(
+                    content=prompts.REFUTE_PROMPT.format(
+                        n=n,
+                        desc=describe_chunk(doc),
+                        fragment=html_tables_to_markdown(doc.text)[:VERIFY_FRAGMENT_CHARS],
+                        claims=listado,
                     )
-                ]
+                )
+            ]
+        )
+        data = parse_json_reply(str(reply.content))
+        out: dict[int, tuple[str, str]] = {}
+        for v in data.get("veredictos") or []:
+            if not isinstance(v, dict):
+                continue
+            try:
+                local = int(v.get("i"))
+            except (TypeError, ValueError):
+                continue
+            estado = str(v.get("estado") or "").lower().strip()
+            if estado not in prompts.CLAIM_STATES or not 1 <= local <= len(group):
+                continue
+            claim_idx = group[local - 1][0]
+            out[claim_idx] = (estado, str(v.get("motivo") or "")[:120])
+        return out
+
+    async def verify(self, state: AgentState) -> dict:
+        """Verificación adversaria por afirmación.
+
+        El verificador anterior era una sola pregunta binaria sobre la
+        respuesta entera ("¿está todo sustentado?"), con el contexto completo
+        a la vista y formulada para decir que sí. Una respuesta de veinte datos
+        con un solo dato mal atribuido devolvía `grounded: true`, y la insignia
+        verde acababa CERTIFICANDO el error. Ahora cada afirmación se refuta
+        por separado contra el fragmento que ella misma cita.
+        """
+        docs = state.get("relevant_documents") or []
+        answer = str(state.get("answer") or "")
+        empty = {"grounded": None, "claims_total": 0, "claims_ok": 0, "claim_issues": []}
+        if not docs or not answer.strip():
+            return empty
+        try:
+            claims = await self._extract_claims(answer, len(docs))
+        except Exception as e:  # noqa: BLE001 — la verificación nunca tumba la respuesta
+            log.warning("verify: extracción de afirmaciones falló: %s", e)
+            return empty
+        if not claims:
+            return empty
+
+        por_fragmento: dict[int, list[tuple[int, dict]]] = {}
+        for idx, c in enumerate(claims):
+            for n in c["citas"]:
+                por_fragmento.setdefault(n, []).append((idx, c))
+
+        veredictos: dict[int, list[tuple[str, str]]] = {}
+        if por_fragmento:
+            resultados = await asyncio.gather(
+                *(self._refute(n, docs[n - 1], grupo) for n, grupo in por_fragmento.items()),
+                return_exceptions=True,
             )
-            data = parse_json_reply(str(reply.content))
-            grounded = data.get("grounded")
-            grounded = bool(grounded) if isinstance(grounded, bool) else None
-        except Exception as e:  # noqa: BLE001 — verificación es best-effort
-            log.warning("verify falló: %s", e)
+            for r in resultados:
+                if isinstance(r, BaseException):
+                    log.warning("verify: refutación de un fragmento falló: %s", r)
+                    continue
+                for claim_idx, verdict in r.items():
+                    veredictos.setdefault(claim_idx, []).append(verdict)
+
+        issues: list[dict] = []
+        ok = 0
+        for idx, c in enumerate(claims):
+            estados = veredictos.get(idx, [])
+            if not c["citas"]:
+                # Afirmación fáctica sin [n]: la regla 2 la prohíbe y no hay
+                # nada contra lo que contrastarla.
+                issues.append({"texto": c["texto"], "estado": "sin_cita", "motivo": ""})
+                continue
+            if not estados:
+                issues.append({"texto": c["texto"], "estado": "ausente", "motivo": "sin veredicto"})
+                continue
+            # Basta que UNO de los fragmentos citados la sustente.
+            sustentada = next((m for e, m in estados if e == "sustentada"), None)
+            if sustentada is not None:
+                ok += 1
+                continue
+            refutada = next(((e, m) for e, m in estados if e == "refutada"), None)
+            estado, motivo = refutada if refutada else estados[0]
+            issues.append({"texto": c["texto"], "estado": estado, "motivo": motivo})
+
+        if ok == len(claims):
+            grounded: bool | None = True
+        elif any(i["estado"] == "refutada" for i in issues):
+            grounded = False
+        else:
+            # Ni contradichas ni sustentadas: verificación no concluyente.
             grounded = None
-        return {"grounded": grounded}
+        log.info(
+            "verify: %d/%d afirmaciones sustentadas, %d con reparo",
+            ok,
+            len(claims),
+            len(issues),
+        )
+        return {
+            "grounded": grounded,
+            "claims_total": len(claims),
+            "claims_ok": ok,
+            "claim_issues": issues[:MAX_CLAIMS],
+        }
 
     async def no_context(self, state: AgentState) -> dict:
         return {
