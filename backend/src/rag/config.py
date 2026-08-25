@@ -42,7 +42,10 @@ class Settings(BaseSettings):
     # en /api/meta, /api/health ni en mensajes de error.
     llm_provider: str = "ollama"
     deepseek_api_key: SecretStr = SecretStr("")
-    deepseek_model: str = "deepseek-v4-flash"
+    # Vision Exp y no el Flash de texto: mismo precio publicado, y los
+    # contratos traen diagramas de carga y mapas que en el futuro entrarán
+    # como imagen. Para solo-texto se comporta igual.
+    deepseek_model: str = "deepseek-v4-flash-vision-exp"
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     llm_temperature: float = 0.1
     llm_num_ctx: int = 8192

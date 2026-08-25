@@ -39,7 +39,7 @@ services:
       # Proveedor de generación: ollama (local) o deepseek (nube). La clave
       # viaja solo por entorno desde .env; no la pongas aquí ni en command.
       RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-ollama}
-      RAG_DEEPSEEK_MODEL: ${RAG_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      RAG_DEEPSEEK_MODEL: ${RAG_DEEPSEEK_MODEL:-deepseek-v4-flash-vision-exp}
       RAG_DEEPSEEK_API_KEY: ${RAG_DEEPSEEK_API_KEY:-}
       RAG_COLLECTION: ${RAG_COLLECTION:-sein_contracts}
       RAG_API_KEY: ${RAG_API_KEY:-}
