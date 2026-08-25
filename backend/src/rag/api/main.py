@@ -43,6 +43,7 @@ STEP_LABELS = {
     "generate": "Redactando respuesta",
     "verify": "Verificando fidelidad a las fuentes",
     "no_context": "Sin contexto relevante",
+    "refuse": "Consulta fuera del alcance del asistente",
 }
 
 

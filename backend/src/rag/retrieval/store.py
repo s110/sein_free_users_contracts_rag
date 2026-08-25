@@ -161,6 +161,43 @@ class HybridStore:
     def count(self) -> int:
         return self.client.count(self.collection, exact=True).count
 
+    def find_extreme_doc(self, filters: dict | None, *, latest: bool = True) -> dict | None:
+        """Documento con la fecha de suscripción máxima (o mínima) del índice.
+
+        "¿El contrato más reciente?" no es respondible por similitud semántica:
+        el retrieval trae fragmentos parecidos a la pregunta, no el máximo de
+        un campo. Esto escanea la metadata (solo payload, sin vectores) y
+        resuelve el superlativo de verdad. Respeta los filtros activos, así
+        "la adenda más reciente de X" también funciona.
+        """
+        qfilter = _build_filter(filters)
+        best: dict | None = None
+        offset = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection,
+                scroll_filter=qfilter,
+                with_payload=["doc_id", "source_file", "tipo", "usuario_libre",
+                              "suministrador", "fecha_suscripcion"],
+                with_vectors=False,
+                limit=1024,
+                offset=offset,
+            )
+            for pt in points:
+                payload = pt.payload or {}
+                fecha = payload.get("fecha_suscripcion")
+                if not fecha:
+                    continue
+                if (
+                    best is None
+                    or (latest and fecha > best["fecha_suscripcion"])
+                    or (not latest and fecha < best["fecha_suscripcion"])
+                ):
+                    best = payload
+            if offset is None:
+                break
+        return best
+
     def list_documents(self, limit: int = 500) -> list[dict]:
         """Documentos únicos indexados (para el panel de fuentes del frontend)."""
         docs: dict[str, dict] = {}

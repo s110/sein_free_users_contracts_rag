@@ -34,7 +34,10 @@ def test_parse_json_reply_garbage_returns_empty():
 
 def test_format_context_numbers_and_pages():
     ctx = format_context([_chunk(page_start=3, page_end=4), _chunk(chunk_id="c2")])
-    assert ctx.startswith("[1] ATRE_20467534026_20250514_8789_00.pdf, pág. 3-4")
+    # La cabecera ahora antepone la metadata del documento (tipo, partes,
+    # fecha): el archivo y las páginas viven entre paréntesis.
+    assert ctx.startswith("[1] ")
+    assert "(ATRE_20467534026_20250514_8789_00.pdf, pág. 3-4)" in ctx
     assert "[2]" in ctx
 
 

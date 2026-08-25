@@ -75,6 +75,12 @@ def strip_ghost_citations(answer: str, n_sources: int) -> str:
 
 
 def format_context(docs: list[RetrievedChunk]) -> str:
+    """Cada fragmento entra con su metadata en la cabecera.
+
+    Sin esto el modelo respondía "no existe información sobre las fechas de
+    suscripción" con las fechas a un campo de distancia: estaban en el payload
+    y en el panel de fuentes, pero jamás llegaban al prompt.
+    """
     parts = []
     for i, d in enumerate(docs, start=1):
         page = ""
@@ -82,7 +88,14 @@ def format_context(docs: list[RetrievedChunk]) -> str:
             page = f", pág. {d.page_start}" + (
                 f"-{d.page_end}" if d.page_end and d.page_end != d.page_start else ""
             )
-        header = f"[{i}] {d.source_file}{page}"
+        desc = d.tipo or "documento"
+        if d.usuario_libre:
+            desc += f" de {d.usuario_libre}"
+        if d.suministrador:
+            desc += f" con {d.suministrador}"
+        if d.fecha_suscripcion:
+            desc += f", suscrito el {d.fecha_suscripcion}"
+        header = f"[{i}] {desc} ({d.source_file}{page})"
         if d.section:
             header += f" — {d.section}"
         parts.append(f"{header}\n{d.text}")
@@ -152,17 +165,37 @@ class ContractsAgent:
             ]
         )
         data = parse_json_reply(str(reply.content))
+        scope = str(data.get("alcance") or "contratos")
+        if scope not in ("contratos", "fuera_de_tema", "extraccion_masiva"):
+            scope = "contratos"
         search_query = str(data.get("search_query") or "").strip() or question
         extracted = data.get("filters") if isinstance(data.get("filters"), dict) else {}
         filters = {k: v for k, v in extracted.items() if v}
         # Los filtros explícitos del usuario (UI) mandan sobre los extraídos
         filters.update(state.get("user_filters") or {})
+
+        # Superlativo temporal: "el contrato más reciente" no se resuelve por
+        # similitud — se busca el máximo de fecha_suscripcion en la metadata
+        # (respetando los filtros) y se acota el retrieval a ese documento.
+        resolved_doc = None
+        orden = data.get("orden")
+        if scope == "contratos" and orden in ("mas_reciente", "mas_antiguo"):
+            resolved_doc = await asyncio.to_thread(
+                self.store.find_extreme_doc, filters or None, latest=orden == "mas_reciente"
+            )
+            if resolved_doc and resolved_doc.get("doc_id"):
+                filters = dict(filters)
+                filters["doc_id"] = resolved_doc["doc_id"]
         # Ni la pregunta ni los RUC van al log: `docker logs` acababa siendo
         # un registro consultable de qué analista preguntó por qué empresa.
-        log.info("analyze: %d filtros extraídos", len(filters))
+        log.info(
+            "analyze: alcance=%s, %d filtros, orden=%s", scope, len(filters), orden or "-"
+        )
         return {
             "search_query": search_query,
             "filters": filters,
+            "scope": scope,
+            "resolved_doc": resolved_doc,
             "rewrites": state.get("rewrites", 0),
         }
 
@@ -179,7 +212,12 @@ class ContractsAgent:
         )
         # Si el filtro extraído automáticamente dejó 0 resultados, reintenta sin él
         # (un RUC mal extraído no debe dejar al usuario sin respuesta)
-        if not docs and state.get("filters") and not state.get("user_filters"):
+        if (
+            not docs
+            and state.get("filters")
+            and not state.get("user_filters")
+            and not state.get("resolved_doc")
+        ):
             log.info("retrieve: 0 docs con filtros, reintento sin filtros")
             docs = await asyncio.to_thread(
                 self.store.search, state["search_query"], top_k=self.settings.top_k
@@ -288,6 +326,17 @@ class ContractsAgent:
                 msgs.append(AIMessage(content=content))
         return msgs
 
+    async def refuse(self, state: AgentState) -> dict:
+        """Corta ANTES del retrieval: ni búsqueda ni generación para consultas
+        fuera de alcance o de extracción masiva. También ahorra tokens del
+        proveedor de nube cuando está activo."""
+        answer = (
+            prompts.BULK_EXTRACTION_ANSWER
+            if state.get("scope") == "extraccion_masiva"
+            else prompts.OUT_OF_SCOPE_ANSWER
+        )
+        return {"answer": answer, "grounded": None, "no_context": False}
+
     def _build(self):
         g = StateGraph(AgentState)
         g.add_node("analyze", self.analyze)
@@ -297,9 +346,15 @@ class ContractsAgent:
         g.add_node("generate", self.generate)
         g.add_node("verify", self.verify)
         g.add_node("no_context", self.no_context)
+        g.add_node("refuse", self.refuse)
 
         g.set_entry_point("analyze")
-        g.add_edge("analyze", "retrieve")
+        g.add_conditional_edges(
+            "analyze",
+            lambda st: "retrieve" if st.get("scope", "contratos") == "contratos" else "refuse",
+            {"retrieve": "retrieve", "refuse": "refuse"},
+        )
+        g.add_edge("refuse", END)
         g.add_edge("retrieve", "grade")
         g.add_conditional_edges(
             "grade",
