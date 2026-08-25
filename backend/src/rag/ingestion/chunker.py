@@ -114,6 +114,29 @@ def _to_dict(blocks: list[_Block]) -> dict:
     }
 
 
+def ensure_tables_have_context(chunks: list[dict], overlap: int) -> None:
+    """Invariante final: ningún chunk abre con una tabla.
+
+    El arrastre del empaquetador cubre el caso corriente, pero no todos: una
+    tabla de más de `max_chars` va por `_hard_split` (que descarta el buffer
+    sin arrastre) y un header markdown fuerza un corte semántico que puede
+    caer justo antes de la tabla. En vez de parchear cada ruta, la garantía se
+    impone aquí sobre el resultado: una tabla sin la frase que la introduce no
+    dice de quién son sus cifras, y el modelo las atribuye al suministrador de
+    la cabecera del fragmento — así una tabla de Celepsa acabó presentada como
+    potencia contratada de Pluz.
+
+    El primer chunk queda como está: si el documento empieza con una tabla, no
+    hay texto anterior del que tirar.
+    """
+    for i in range(1, len(chunks)):
+        if not _is_table(chunks[i]["text"]):
+            continue
+        tail = chunks[i - 1]["text"][-overlap:].strip()
+        if tail:
+            chunks[i]["text"] = f"…{tail}\n\n{chunks[i]['text']}"
+
+
 def _hard_split(text: str, max_chars: int, overlap: int) -> list[str]:
     step = max(max_chars - overlap, 1)
     return [
@@ -184,6 +207,7 @@ def chunk_document(
 
     close_paragraph()
     packer.flush()
+    ensure_tables_have_context(packer.chunks, overlap_chars)
 
     return [
         Chunk(

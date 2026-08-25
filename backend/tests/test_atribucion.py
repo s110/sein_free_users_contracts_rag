@@ -150,3 +150,54 @@ class TestLaTablaNuncaPierdeSuDueño:
         )
         assert len(chunks) > 1
         assert any("B" in c.text for c in chunks[1:]), "el bloque intermedio se perdió"
+
+
+class TestTablasGrandesYTrasEncabezado:
+    """Las dos rutas que el arrastre del empaquetador no cubría: una tabla
+    mayor que max_chars (troceado duro) y una tabla justo después de un
+    encabezado markdown (corte semántico)."""
+
+    def _chunks(self, cuerpo: str, max_chars: int = 3200):
+        from rag.ingestion.chunker import chunk_document
+        from rag.schemas import DocumentMeta
+
+        return chunk_document(
+            "d",
+            cuerpo,
+            DocumentMeta(source_file="c.pdf", source_hash="h"),
+            max_chars=max_chars,
+            overlap_chars=400,
+        )
+
+    def test_tabla_gigante_conserva_la_frase_que_la_introduce(self):
+        intro = "El contrato con Celepsa contempla la siguiente potencia contratada:"
+        filas = "".join(f"<tr><td>{a}</td><td>3.5</td></tr>" for a in range(2024, 2400))
+        cuerpo = f"{'relleno. ' * 100}\n\n{intro}\n\n<table>{filas}</table>\n"
+        chunks = self._chunks(cuerpo)
+        con_tabla = [c for c in chunks if "<tr>" in c.text or "3.5" in c.text]
+        assert con_tabla
+        assert "Celepsa" in con_tabla[0].text, "la tabla gigante perdió su leyenda"
+
+    def test_tabla_tras_encabezado_conserva_contexto_anterior(self):
+        cuerpo = (
+            "La potencia contratada con Celepsa es la que sigue:\n\n"
+            "## Anexo 1\n\n"
+            "<table><tr><td>2026</td><td>4.5</td></tr></table>\n"
+        )
+        chunks = self._chunks(cuerpo)
+        con_tabla = [c for c in chunks if "4.5" in c.text]
+        assert con_tabla
+        assert "Celepsa" in con_tabla[0].text
+
+    def test_ningun_chunk_abre_con_tabla_salvo_que_el_documento_empiece_asi(self):
+        cuerpo = (
+            "Introducción con su frase.\n\n## Sección\n\n"
+            "<table><tr><td>a</td></tr></table>\n\n"
+            + "texto. "
+            * 600
+            + "\n\nOtra frase que presenta la tabla:\n\n"
+            "<table><tr><td>b</td></tr></table>\n"
+        )
+        chunks = self._chunks(cuerpo)
+        for c in chunks[1:]:
+            assert not c.text.lstrip().startswith("<table")
