@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 log = logging.getLogger("rag.config")
@@ -33,6 +34,16 @@ class Settings(BaseSettings):
     # índice se autodetecta, pero cambiar de embedder exige reindexar.
     llm_model: str = "qwen3.5:4b"
     embedding_model: str = "qwen3-embedding:0.6b"
+
+    # --- Proveedor del LLM: "ollama" (local, default) o "deepseek" (nube) ---
+    # Los embeddings SIEMPRE son locales (el índice depende de ellos); solo la
+    # generación puede ir a la nube. La clave es SecretStr: cualquier repr,
+    # log o volcado de Settings la muestra como '**********'. Nunca aparece
+    # en /api/meta, /api/health ni en mensajes de error.
+    llm_provider: str = "ollama"
+    deepseek_api_key: SecretStr = SecretStr("")
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_base_url: str = "https://api.deepseek.com/v1"
     llm_temperature: float = 0.1
     llm_num_ctx: int = 8192
 
@@ -108,6 +119,15 @@ class Settings(BaseSettings):
             raise ConfigError(
                 f"RAG_CHAT_DAILY_LIMIT ({self.chat_daily_limit}) debe ser >= 1 "
                 "con RAG_PUBLIC_CHAT=true"
+            )
+        if self.llm_provider not in ("ollama", "deepseek"):
+            raise ConfigError(
+                f"RAG_LLM_PROVIDER inválido: {self.llm_provider!r} (ollama | deepseek)"
+            )
+        if self.llm_provider == "deepseek" and not self.deepseek_api_key.get_secret_value():
+            raise ConfigError(
+                "RAG_LLM_PROVIDER=deepseek exige RAG_DEEPSEEK_API_KEY. "
+                "Ponla solo en .env (600, gitignoreado), nunca en compose ni en el código."
             )
         if self.public_chat and not self.api_key:
             log.warning(

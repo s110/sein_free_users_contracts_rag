@@ -36,6 +36,11 @@ services:
       RAG_OLLAMA_HOST: ${RAG_OLLAMA_HOST:-http://host.docker.internal:11434}
       RAG_LLM_MODEL: ${RAG_LLM_MODEL:-qwen3.5:4b}
       RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      # Proveedor de generación: ollama (local) o deepseek (nube). La clave
+      # viaja solo por entorno desde .env; no la pongas aquí ni en command.
+      RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-ollama}
+      RAG_DEEPSEEK_MODEL: ${RAG_DEEPSEEK_MODEL:-deepseek-v4-flash}
+      RAG_DEEPSEEK_API_KEY: ${RAG_DEEPSEEK_API_KEY:-}
       RAG_COLLECTION: ${RAG_COLLECTION:-sein_contracts}
       RAG_API_KEY: ${RAG_API_KEY:-}
       # Sin clave, el backend se niega a arrancar salvo que se pida

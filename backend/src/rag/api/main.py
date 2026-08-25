@@ -212,7 +212,9 @@ async def health(request: Request, response: Response):
     out = {
         "status": "ok",
         "version": __version__,
-        "llm": settings.llm_model,
+        "llm": settings.deepseek_model
+        if settings.llm_provider == "deepseek"
+        else settings.llm_model,
         "embeddings": settings.embedding_model,
     }
     try:
@@ -228,10 +230,13 @@ async def health(request: Request, response: Response):
             r.raise_for_status()
             available = {m.get("name", "") for m in r.json().get("models", [])}
             out["ollama"] = "ok"
+            required = (
+                (settings.embedding_model,)
+                if settings.llm_provider != "ollama"
+                else (settings.llm_model, settings.embedding_model)
+            )
             missing = [
-                m
-                for m in (settings.llm_model, settings.embedding_model)
-                if m not in available and f"{m}:latest" not in available
+                m for m in required if m not in available and f"{m}:latest" not in available
             ]
             if missing:
                 out["missing_models"] = missing
