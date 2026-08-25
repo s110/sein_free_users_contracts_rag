@@ -139,8 +139,12 @@ def backfill_norm_fields(client: QdrantClient, collection: str) -> int:
     while True:
         points, offset = client.scroll(
             collection_name=collection,
-            with_payload=["suministrador", "suministrador_norm",
-                          "usuario_libre", "usuario_libre_norm"],
+            with_payload=[
+                "suministrador",
+                "suministrador_norm",
+                "usuario_libre",
+                "usuario_libre_norm",
+            ],
             with_vectors=False,
             limit=1024,
             offset=offset,

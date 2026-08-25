@@ -84,7 +84,7 @@ def build(vault: Path, n: int) -> list[dict]:
         # sacadas del otro documento.
         if user_doc_count.get(user, 0) != 1 or user in seen_users:
             continue
-        body = text[FRONTMATTER_RE.match(text).end():] if FRONTMATTER_RE.match(text) else text
+        body = text[FRONTMATTER_RE.match(text).end() :] if FRONTMATTER_RE.match(text) else text
         for pattern, template in ANCHORS:
             if pattern.search(body):
                 seen_users.add(user)
@@ -105,9 +105,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--vault", type=Path, required=True)
     parser.add_argument("--n", type=int, default=20)
-    parser.add_argument(
-        "--out", type=Path, default=Path(__file__).parent / "golden.jsonl"
-    )
+    parser.add_argument("--out", type=Path, default=Path(__file__).parent / "golden.jsonl")
     args = parser.parse_args()
 
     cases = build(args.vault.expanduser(), args.n)

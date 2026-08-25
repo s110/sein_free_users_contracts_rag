@@ -31,9 +31,7 @@ def build_llm(
             model=settings.deepseek_model,
             temperature=temp,
             timeout=settings.request_timeout,
-            model_kwargs=(
-                {"response_format": {"type": "json_object"}} if json_mode else {}
-            ),
+            model_kwargs=({"response_format": {"type": "json_object"}} if json_mode else {}),
         )
     return ChatOllama(
         base_url=settings.ollama_host,

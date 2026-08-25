@@ -41,8 +41,13 @@ class FakeStore:
 
     def search_diverse(self, query, *, n_docs, per_doc=2, filters=None):
         self.calls.append(
-            {"query": query, "n_docs": n_docs, "per_doc": per_doc,
-             "filters": filters, "diverse": True}
+            {
+                "query": query,
+                "n_docs": n_docs,
+                "per_doc": per_doc,
+                "filters": filters,
+                "diverse": True,
+            }
         )
         return self.results.pop(0) if self.results else []
 

@@ -276,9 +276,7 @@ async def health(request: Request, response: Response):
                 if settings.llm_provider != "ollama"
                 else (settings.llm_model, settings.embedding_model)
             )
-            missing = [
-                m for m in required if m not in available and f"{m}:latest" not in available
-            ]
+            missing = [m for m in required if m not in available and f"{m}:latest" not in available]
             if missing:
                 out["missing_models"] = missing
                 out["status"] = "degraded"

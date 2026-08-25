@@ -37,8 +37,11 @@ class TestRetrieveDiverso:
         a = agent(store_results=[docs])
         a.store.distinct_total = 12
         out = await a.retrieve(
-            {"search_query": "contratos orygen", "num_docs": 5,
-             "filters": {"suministrador": "orygen"}}
+            {
+                "search_query": "contratos orygen",
+                "num_docs": 5,
+                "filters": {"suministrador": "orygen"},
+            }
         )
         assert a.store.calls[0]["diverse"] is True
         assert a.store.calls[0]["n_docs"] == 5

@@ -240,7 +240,10 @@ class ContractsAgent:
         # un registro consultable de qué analista preguntó por qué empresa.
         log.info(
             "analyze: alcance=%s, %d filtros, orden=%s, num_docs=%s",
-            scope, len(filters), orden or "-", num_docs or "-",
+            scope,
+            len(filters),
+            orden or "-",
+            num_docs or "-",
         )
         return {
             "search_query": search_query,

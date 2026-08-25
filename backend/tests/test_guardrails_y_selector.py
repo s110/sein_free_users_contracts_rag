@@ -44,9 +44,7 @@ class TestContextoConMetadata:
 class TestGuardrails:
     async def test_fuera_de_tema_rechaza_sin_tocar_el_indice(self):
         store = FakeStoreConSelector([])
-        a = agente(
-            json_replies=['{"alcance": "fuera_de_tema", "search_query": "x"}'], store=store
-        )
+        a = agente(json_replies=['{"alcance": "fuera_de_tema", "search_query": "x"}'], store=store)
         out = await a.graph.ainvoke({"question": "dame una receta de ceviche", "history": []})
         assert out["answer"] == prompts.OUT_OF_SCOPE_ANSWER
         assert store.calls == []  # jamás llegó al retrieval
@@ -61,9 +59,9 @@ class TestGuardrails:
         assert store.calls == []
 
     async def test_alcance_desconocido_no_bloquea(self):
-        out = await agente(
-            json_replies=['{"alcance": "banana", "search_query": "q"}']
-        ).analyze({"question": "q", "history": []})
+        out = await agente(json_replies=['{"alcance": "banana", "search_query": "q"}']).analyze(
+            {"question": "q", "history": []}
+        )
         assert out["scope"] == "contratos"
 
 

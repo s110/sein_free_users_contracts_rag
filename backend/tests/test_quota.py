@@ -127,9 +127,7 @@ class TestPublicChat:
     def test_ips_distintas_tienen_cuotas_separadas(self, public_settings):
         client = build_public(public_settings)
         for ip in ("10.0.0.1", "10.0.0.2"):
-            r = client.post(
-                "/api/chat", json={"question": "x"}, headers={"X-Real-IP": ip}
-            )
+            r = client.post("/api/chat", json={"question": "x"}, headers={"X-Real-IP": ip})
             assert r.status_code == 200
 
     def test_un_peer_no_confiable_no_elige_su_cuota(self, public_settings):

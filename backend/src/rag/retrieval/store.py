@@ -62,14 +62,10 @@ def _build_filter(filters: dict | None) -> models.Filter | None:
             # hasta el próximo reindex completo.
             val = str(v).lower()
             conditions.append(
-                models.FieldCondition(
-                    key=k, match=models.MatchAny(any=[val, val.capitalize()])
-                )
+                models.FieldCondition(key=k, match=models.MatchAny(any=[val, val.capitalize()]))
             )
         else:
-            conditions.append(
-                models.FieldCondition(key=k, match=models.MatchValue(value=str(v)))
-            )
+            conditions.append(models.FieldCondition(key=k, match=models.MatchValue(value=str(v))))
     return models.Filter(must=conditions) if conditions else None
 
 
@@ -281,8 +277,14 @@ class HybridStore:
             points, offset = self.client.scroll(
                 collection_name=self.collection,
                 scroll_filter=qfilter,
-                with_payload=["doc_id", "source_file", "tipo", "usuario_libre",
-                              "suministrador", "fecha_suscripcion"],
+                with_payload=[
+                    "doc_id",
+                    "source_file",
+                    "tipo",
+                    "usuario_libre",
+                    "suministrador",
+                    "fecha_suscripcion",
+                ],
                 with_vectors=False,
                 limit=1024,
                 offset=offset,
@@ -294,9 +296,7 @@ class HybridStore:
                     by_doc.setdefault(doc_id, payload)
             if offset is None:
                 break
-        ordered = sorted(
-            by_doc.values(), key=lambda p: p["fecha_suscripcion"], reverse=latest
-        )
+        ordered = sorted(by_doc.values(), key=lambda p: p["fecha_suscripcion"], reverse=latest)
         return ordered[:n]
 
     def list_documents(self, limit: int = 500) -> list[dict]:
