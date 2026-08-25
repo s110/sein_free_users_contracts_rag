@@ -178,6 +178,7 @@ class ContractsAgent:
         # similitud — se busca el máximo de fecha_suscripcion en la metadata
         # (respetando los filtros) y se acota el retrieval a ese documento.
         resolved_doc = None
+        selector_note = None
         orden = data.get("orden")
         if scope == "contratos" and orden in ("mas_reciente", "mas_antiguo"):
             resolved_doc = await asyncio.to_thread(
@@ -186,6 +187,15 @@ class ContractsAgent:
             if resolved_doc and resolved_doc.get("doc_id"):
                 filters = dict(filters)
                 filters["doc_id"] = resolved_doc["doc_id"]
+                adjetivo = "reciente" if orden == "mas_reciente" else "antiguo"
+                selector_note = (
+                    f"\nNOTA DEL SISTEMA: el documento más {adjetivo} del índice que "
+                    f"coincide con la pregunta es un(a) {resolved_doc.get('tipo') or 'documento'} "
+                    f"de {resolved_doc.get('usuario_libre') or '¿?'} suscrito el "
+                    f"{resolved_doc.get('fecha_suscripcion') or '¿?'}. Preséntalo con esa "
+                    "naturaleza exacta; si es una adenda, aclara que modifica un contrato "
+                    "anterior y no la llames 'el contrato'.\n"
+                )
         # Ni la pregunta ni los RUC van al log: `docker logs` acababa siendo
         # un registro consultable de qué analista preguntó por qué empresa.
         log.info(
@@ -196,6 +206,7 @@ class ContractsAgent:
             "filters": filters,
             "scope": scope,
             "resolved_doc": resolved_doc,
+            "selector_note": selector_note,
             "rewrites": state.get("rewrites", 0),
         }
 
@@ -268,7 +279,9 @@ class ContractsAgent:
             *self._history_messages(state.get("history", [])),
             HumanMessage(
                 content=prompts.GENERATE_USER.format(
-                    context=format_context(docs), question=state["question"]
+                    context=format_context(docs),
+                    question=state["question"],
+                    selector_note=state.get("selector_note") or "",
                 )
             ),
         ]

@@ -30,6 +30,16 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Link mágico de acceso ilimitado: contracts.../#acceso=CLAVE guarda la
+    // clave una sola vez y limpia la URL. Va en el fragmento (#) a propósito:
+    // los fragmentos no llegan al servidor ni a los logs de nginx/Cloudflare.
+    const m = window.location.hash.match(/^#acceso=(.+)$/);
+    if (m) {
+      const clave = decodeURIComponent(m[1]);
+      setApiKey(clave);
+      setApiKeyInput(clave);
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
     fetchHealth().then(setHealth).catch(() => setHealth(null));
   }, []);
 
@@ -177,7 +187,7 @@ export default function App() {
       {showSettings && (
         <div className="settings">
           <label>
-            API key (si el servidor la exige):{" "}
+            Acceso sin límite diario (clave privada del administrador):{" "}
             <input
               type="password"
               value={apiKeyInput}

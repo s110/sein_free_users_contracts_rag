@@ -193,3 +193,15 @@ describe("App: stream cortado", () => {
     expect(screen.queryByText(/conexión se cortó/i)).not.toBeInTheDocument();
   });
 });
+
+describe("App: link mágico de acceso", () => {
+  it("guarda la clave del fragmento #acceso= y limpia la URL", async () => {
+    window.location.hash = "#acceso=clave-magica-123";
+    localStorage.clear();
+    const { getApiKey } = await import("./api");
+    render(<App />);
+    await waitFor(() => expect(getApiKey()).toBe("clave-magica-123"));
+    expect(window.location.hash).toBe("");
+    window.location.hash = "";
+  });
+});

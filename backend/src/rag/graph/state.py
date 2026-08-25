@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
     filters: dict  # filtros efectivos (usuario + extraídos)
     scope: str  # "contratos" | "fuera_de_tema" | "extraccion_masiva"
     resolved_doc: dict | None  # doc elegido por el selector temporal (más reciente/antiguo)
+    selector_note: str | None  # nota al generador sobre cómo se resolvió el superlativo
 
     # Retrieval
     documents: list[RetrievedChunk]

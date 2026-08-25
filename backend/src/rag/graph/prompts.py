@@ -2,7 +2,7 @@
 para que un cambio de prompt sea un diff revisable.
 """
 
-PROMPT_VERSION = "2026-08-25.1"
+PROMPT_VERSION = "2026-08-25.2"
 
 ANALYZE_PROMPT = """\
 Eres el analizador de consultas de un sistema RAG sobre contratos de suministro \
@@ -21,7 +21,10 @@ con contratos eléctricos.
 (resuelve pronombres y referencias a mensajes anteriores; conserva términos técnicos, \
 nombres de empresas, RUCs y fechas tal cual).
 - "orden": "mas_reciente" si la pregunta pide el documento más nuevo/reciente/último \
-por fecha de suscripción; "mas_antiguo" si pide el más viejo/primero; null si no aplica.
+por fecha de suscripción; "mas_antiguo" si pide el más viejo/primero; null si no aplica. \
+OJO con el tipo: "el CONTRATO más reciente" implica filters.tipo="contrato" (un contrato, \
+no una adenda); "la ADENDA más reciente" implica filters.tipo="adenda"; "el documento \
+más reciente" o "lo último publicado" no llevan filtro de tipo.
 - "filters": objeto con filtros de metadata SOLO si el usuario los menciona explícitamente. \
 Claves permitidas: "ruc_usuario_libre" (RUC de 11 dígitos), "tipo" ("contrato" o "adenda"), \
 "fecha_suscripcion" (YYYY-MM-DD exacta), "usuario_libre" (razón social del cliente o parte \
@@ -81,7 +84,21 @@ existan en el CONTEXTO: si hay N fragmentos, los únicos marcadores válidos son
 reformular la búsqueda. NUNCA inventes.
 4. Si hay contradicciones entre fragmentos (p.ej. contrato vs. adenda), señálalas \
 citando ambos.
-5. Sé conciso: responde lo preguntado, sin relleno."""
+5. Sé conciso: responde lo preguntado, sin relleno.
+
+CÓMO FUNCIONAN ESTOS DOCUMENTOS (casuística del registro de Osinergmin):
+- Un CONTRATO (versión 00) es el acuerdo base; una ADENDA (versiones 01, 02...) \
+solo lo MODIFICA: prevalece en lo que cambia (potencia, plazo, precio) y todo lo \
+demás sigue rigiéndose por el contrato base, que puede ser años anterior.
+- NUNCA presentes una adenda como si fuera "el contrato": dilo explícitamente \
+("la adenda N° 3 al contrato de X, que modifica..."). El contrato base puede no \
+estar en el índice todavía.
+- La familia de un documento se identifica por el mismo suministrador y el mismo \
+RUC del usuario libre; el número de documento del archivo CAMBIA entre versiones.
+- La fecha de suscripción es cuándo se firmó, no cuándo entra en vigencia: la \
+vigencia está en el texto del documento.
+- Una empresa puede tener contratos con varios suministradores (o haber cambiado \
+de suministrador): si el contexto muestra más de una familia, distínguelas."""
 
 GENERATE_USER = """\
 CONTEXTO (fragmentos recuperados de los contratos):
@@ -89,7 +106,7 @@ CONTEXTO (fragmentos recuperados de los contratos):
 {context}
 
 PREGUNTA: {question}
-
+{selector_note}
 Responde citando con [n]."""
 
 GROUNDEDNESS_PROMPT = """\
