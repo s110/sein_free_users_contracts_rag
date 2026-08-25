@@ -51,6 +51,16 @@ def _build_filter(filters: dict | None) -> models.Filter | None:
                     match=models.MatchText(text=normalize_text_filter(str(v))),
                 )
             )
+        elif k == "tipo":
+            # El índice histórico mezcla "Contrato" y "contrato" (state del
+            # scraper vs parser del filename). MatchAny cubre ambas grafías
+            # hasta el próximo reindex completo.
+            val = str(v).lower()
+            conditions.append(
+                models.FieldCondition(
+                    key=k, match=models.MatchAny(any=[val, val.capitalize()])
+                )
+            )
         else:
             conditions.append(
                 models.FieldCondition(key=k, match=models.MatchValue(value=str(v)))

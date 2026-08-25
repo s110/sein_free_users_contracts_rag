@@ -180,6 +180,17 @@ class ContractsAgent:
         resolved_doc = None
         selector_note = None
         orden = data.get("orden")
+        if orden in ("mas_reciente", "mas_antiguo") and "tipo" not in filters:
+            # Cinturón determinista sobre la guía del prompt: "el CONTRATO más
+            # reciente" debe resolver un contrato, no la adenda más nueva.
+            # \bcontrato\b no matchea "contratada" (palabra distinta).
+            q = question.lower()
+            pide_contrato = re.search(r"\bcontratos?\b", q)
+            pide_adenda = re.search(r"\badendas?\b", q)
+            if pide_contrato and not pide_adenda:
+                filters["tipo"] = "contrato"
+            elif pide_adenda and not pide_contrato:
+                filters["tipo"] = "adenda"
         if scope == "contratos" and orden in ("mas_reciente", "mas_antiguo"):
             resolved_doc = await asyncio.to_thread(
                 self.store.find_extreme_doc, filters or None, latest=orden == "mas_reciente"

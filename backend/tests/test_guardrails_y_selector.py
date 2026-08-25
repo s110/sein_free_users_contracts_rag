@@ -88,3 +88,28 @@ class TestSelectorTemporal:
         )
         await a.analyze({"question": "¿potencia de ACME?", "history": []})
         assert store.extreme_calls == []
+
+
+class TestCinturonDeTipo:
+    async def test_contrato_mas_reciente_filtra_tipo_contrato(self):
+        store = FakeStoreConSelector(
+            [], extreme={"doc_id": "d", "tipo": "Contrato", "fecha_suscripcion": "2026-01-01"}
+        )
+        a = agente(
+            json_replies=['{"alcance": "contratos", "search_query": "q", "orden": "mas_reciente"}'],
+            store=store,
+        )
+        await a.analyze(
+            {"question": "¿la potencia contratada en el contrato más reciente?", "history": []}
+        )
+        # "contratada" no cuenta como "contrato"; la palabra completa sí.
+        assert store.extreme_calls[0]["filters"]["tipo"] == "contrato"
+
+    async def test_adenda_mas_reciente_filtra_tipo_adenda(self):
+        store = FakeStoreConSelector([], extreme=None)
+        a = agente(
+            json_replies=['{"alcance": "contratos", "search_query": "q", "orden": "mas_reciente"}'],
+            store=store,
+        )
+        await a.analyze({"question": "¿qué dice la adenda más reciente?", "history": []})
+        assert store.extreme_calls[0]["filters"]["tipo"] == "adenda"

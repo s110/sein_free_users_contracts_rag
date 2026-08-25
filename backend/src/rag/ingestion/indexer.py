@@ -169,7 +169,9 @@ def chunk_payload(chunk: Chunk) -> dict:
         "page_end": chunk.page_end,
         "source_file": m.source_file,
         "source_hash": m.source_hash,
-        "tipo": m.tipo,
+        # Minúsculas SIEMPRE: el parser del filename emite "adenda" y el state
+        # del scraper "Adenda"; el índice mezclado rompía el filtro exacto.
+        "tipo": m.tipo.lower() if m.tipo else None,
         "suministrador": m.suministrador,
         "suministrador_code": m.suministrador_code,
         "usuario_libre": m.usuario_libre,

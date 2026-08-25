@@ -27,8 +27,10 @@ class TestFiltroRazonSocial:
         assert cond.match.text == "lavanderia landeo"
 
     def test_los_demas_campos_siguen_siendo_match_exacto(self):
-        f = _build_filter({"ruc_usuario_libre": "20348133889", "tipo": "adenda"})
-        assert {c.key for c in f.must} == {"ruc_usuario_libre", "tipo"}
+        # tipo pasó a MatchAny (grafías mezcladas en el índice); el resto
+        # sigue siendo igualdad exacta.
+        f = _build_filter({"ruc_usuario_libre": "20348133889", "fecha_suscripcion": "2026-01-01"})
+        assert {c.key for c in f.must} == {"ruc_usuario_libre", "fecha_suscripcion"}
         assert all(isinstance(c.match, models.MatchValue) for c in f.must)
 
 
@@ -46,3 +48,11 @@ class TestCitasFantasma:
 
     def test_sin_fuentes_borra_todo_marcador(self):
         assert strip_ghost_citations("No hay contexto [1].", 0) == "No hay contexto ."
+
+
+class TestFiltroTipoInsensibleAMayusculas:
+    def test_tipo_matchea_ambas_grafias(self):
+        f = _build_filter({"tipo": "Contrato"})
+        cond = f.must[0]
+        assert isinstance(cond.match, models.MatchAny)
+        assert set(cond.match.any) == {"contrato", "Contrato"}
