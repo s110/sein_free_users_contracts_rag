@@ -231,6 +231,12 @@ async def _pedir(
         # segundas.
         "max_tokens": 3600 if rescate else 2000,
         "temperature": 0.0,
+        # Sin esto el modelo entra en bucle en las páginas que no puede leer:
+        # emite "[ilegible]" una y otra vez hasta agotar max_tokens y la
+        # respuesta sale sin JSON. Medido: `finish_reason=length` con la
+        # respuesta cruda llena de repeticiones. Una penalización suave rompe
+        # el bucle sin afectar a las lecturas normales, que son cortas.
+        "repetition_penalty": 1.05,
         # La plantilla de chat de Qwen3.8 activa el razonamiento cuando nadie
         # dice lo contrario ("enable_thinking is undefined or is true"), y el
         # bloque <think> se comía casi todo el presupuesto de tokens: unas
