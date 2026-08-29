@@ -38,8 +38,12 @@ apptainer exec --bind $HOME/osinergmin:$HOME/osinergmin $HOME/containers/vllm.si
 # En el Mac, tras el rsync del vault
 docker compose run --rm -v <ruta>/docs_a_reindexar.txt:/data/lista.txt:ro \
   ingest sein-rag-ingest --reindexar-lista /data/lista.txt
-python3 tools/figuras/verificar_enriquecimiento.py
-python3 tools/figuras/informe_figuras.py
+backend/.venv/bin/python tools/figuras/verificar_enriquecimiento.py
+
+# informe_figuras.py necesita Pillow para las miniaturas; el venv del backend
+# no lo trae y el del pipeline OCR sí.
+/Volumes/Datos/proyectos_personales/ocr_pdf_markdown/.venv/bin/python \
+  tools/figuras/informe_figuras.py
 ```
 
 `fusionar_figuras.py` sin `--aplicar` es un simulacro: imprime el recuento y

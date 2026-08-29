@@ -28,6 +28,13 @@ from pathlib import Path
 VAULT = Path("/Users/sebastianlopez/Library/Application Support/osinergmin/vault")
 PAGE_RE = re.compile(r"^#{1,6}\s*P[áa]gina\s+(\d+)\s*$", re.IGNORECASE)
 IMG_RE = re.compile(r"!\[([^\]]*)\]")
+# Un bloque ya insertado. La fusión se corre por oleadas conforme la
+# extracción avanza, y sin esto una página rescatada —que se salta la prueba
+# de novedad por venir vacía— se insertaría de nuevo en cada pasada.
+YA_INSERTADO_RE = re.compile(
+    r"^\*\*(?:Figura de la página \d+ leída|Página \d+ recuperada) de la imagen",
+    re.MULTILINE,
+)
 
 # Tipos que por definición no pueden aportar nada: un logotipo, una página sin
 # gráfico y una figura ilegible no tienen contenido que recuperar. Todo lo demás
@@ -160,7 +167,11 @@ def procesar_documento(md: Path, resultados: list[dict], aplicar: bool) -> dict:
     por_pagina = {r["pagina"]: r for r in resultados}
     decision: dict[int, tuple[bool, str]] = {}
     for pg, res in por_pagina.items():
-        decision[pg] = util(res, "\n".join(texto_por_pagina.get(pg, [])))
+        texto_pg = "\n".join(texto_por_pagina.get(pg, []))
+        if YA_INSERTADO_RE.search(texto_pg):
+            decision[pg] = (False, "ya_insertado")
+            continue
+        decision[pg] = util(res, texto_pg)
 
     salida: list[str] = []
     insertadas = 0
