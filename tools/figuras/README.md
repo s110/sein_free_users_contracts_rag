@@ -18,6 +18,7 @@ corpus nuevo que enriquecer.
 | `comparar_cuantizacion.py` | local | FP8 vs AWQ sobre las mismas páginas |
 | `informe_figuras.py` | local | Página HTML de revisión: escaneo contra lo leído |
 | `aplicar_oleada.sh` | local | Encadena fusión → rsync → reindexado → verificación |
+| `cierre.sh` | local | Pasada final: rehace la fusión desde el vault virgen |
 
 SLURM: `prep_figuras.slurm` (CPU), `figuras_job.slurm` (GPU, encadenado y
 reanudable), `figuras_smoke.slurm` (validación del stack en una hora).
@@ -66,3 +67,14 @@ en el siguiente rsync, en silencio.
 **El cliente corre con el Python del contenedor.** En el nodo de login
 `/usr/bin/python3` es 3.11; en `ds001` es 3.6. Un venv creado en el login
 apunta ahí por symlink y revienta en el nodo de cómputo.
+
+
+## Por qué el cierre rehace la fusión desde cero
+
+`cierre.sh` restaura el vault virgen desde el respaldo antes de fusionar. No es
+paranoia: los bloques insertados en oleadas anteriores a un cambio del formato
+—por ejemplo antes de que existiera el cierre `*(fin de la lectura
+automática…)*`— no lo llevan, y la fusión los salta como `ya_insertado`, así
+que nunca se actualizarían. La fusión es determinista a partir de
+`figuras.jsonl`: rehacerla desde el vault virgen da el resultado correcto y
+consistente en una sola pasada.
