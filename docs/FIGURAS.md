@@ -252,6 +252,39 @@ daría por buena. Por eso:
 - El prompt de extracción prohíbe inferir: lo que no se distingue se escribe
   `[ilegible]`, nunca se aproxima.
 
+### El bloque no puede partirse y perder su cabecera
+
+La primera consulta de prueba destapó el fallo. El RAG respondió con la
+cláusula 16.2 de un anexo — texto que solo existía en una página donde el OCR
+había escrito `_[ERROR OCR página 27: timed out]_`, así que la recuperación era
+real. Pero el fragmento recuperado llegó **sin la cabecera de procedencia**:
+
+```
+chunk 51 | cabecera: sí   → "14.9. Sólo se podrá reincorporar personal…"
+chunk 52 | cabecera: NO   → "16.2. En el caso de violación o incumplimiento…"
+```
+
+Un bloque más largo que un chunk deja la cabecera en el primero, y el resto
+—leído por un modelo de visión, no transcrito del contrato— viaja
+indistinguible del articulado. El generador lo presentaría como cláusula y el
+verificador adversario lo daría por bueno. Es el fallo de Celepsa→Pluz otra
+vez, en sitio nuevo.
+
+El arreglo tiene la misma forma que el de las tablas huérfanas: una invariante
+sobre el resultado, no un parche en cada ruta. El bloque insertado termina en
+un cierre explícito
+
+```markdown
+*(fin de la lectura automática de la imagen)*
+```
+
+y `ensure_figuras_have_provenance()` recorre los chunks llevando cuenta de qué
+bloque sigue abierto; todo fragmento que continúe uno recibe su cabecera con
+un `(continuación)`. `verificar_enriquecimiento.py` lo comprueba sobre el
+corpus entero, y hay tests que fijan las tres condiciones: el bloque partido
+conserva la cabecera en todos sus fragmentos, el texto posterior al cierre NO
+la hereda, y un documento sin figuras no cambia.
+
 ### Reindexado sin reprocesar el corpus
 
 `source_hash` es el hash del **PDF**, no del markdown. Un enriquecimiento

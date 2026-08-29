@@ -25,6 +25,13 @@ RESCATE = re.compile(r"^\*\*Página (\d+) recuperada de la imagen", re.MULTILINE
 # si aparece suelta, hay una lectura de máquina sin decir que lo es.
 VISION = re.compile(r"^.*modelo de visión.*$", re.MULTILINE)
 TABLA = re.compile(r"^\s*(?:<table\b|\|)", re.IGNORECASE)
+CABECERA_FIG = re.compile(
+    r"\*\*(?:Figura de la página \d+ leída|Página \d+ recuperada) de la imagen"
+)
+FIN_FIG = "*(fin de la lectura automática de la imagen)*"
+
+
+fragmentos_sin_cabecera = 0
 
 
 def main() -> int:
@@ -68,6 +75,12 @@ def main() -> int:
                     huerfanas_chunk0 += 1
                 else:
                     huerfanas_reales += 1
+            # Un fragmento que cierra un bloque de lectura automática tiene que
+            # llevar su cabecera: sin ella el texto de máquina es
+            # indistinguible del articulado del contrato.
+            if FIN_FIG in c.text and not CABECERA_FIG.search(c.text):
+                global fragmentos_sin_cabecera
+                fragmentos_sin_cabecera += 1
 
     print(f"documentos            : {docs}")
     print(f"fragmentos            : {chunks_total}")
@@ -78,7 +91,12 @@ def main() -> int:
     if docs_con_marcador:
         print(f"  en {len(docs_con_marcador)} docs, p.ej.: {docs_con_marcador[:5]}")
     print(f"bloques sin procedencia : {figura_sin_procedencia}")
-    ok = huerfanas_reales == 0 and figura_sin_procedencia == 0
+    print(f"FRAGMENTOS de lectura automática sin cabecera: {fragmentos_sin_cabecera}")
+    ok = (
+        huerfanas_reales == 0
+        and figura_sin_procedencia == 0
+        and fragmentos_sin_cabecera == 0
+    )
     print("\nRESULTADO:", "correcto" if ok else "HAY DEFECTOS")
     return 0 if ok else 1
 

@@ -201,3 +201,69 @@ class TestTablasGrandesYTrasEncabezado:
         chunks = self._chunks(cuerpo)
         for c in chunks[1:]:
             assert not c.text.lstrip().startswith("<table")
+
+
+class TestProcedenciaDeLasFiguras:
+    """Un fragmento con lectura de máquina y sin cabecera es una cláusula falsa.
+
+    El bloque que inserta el enriquecimiento de figuras puede ser más largo que
+    un chunk. Si se parte, la cabecera se queda en el primero y el resto viaja
+    indistinguible del articulado: el generador lo presentaría como cláusula y
+    el verificador adversario lo daría por bueno. Es el fallo de Celepsa→Pluz
+    en otro sitio.
+    """
+
+    CABECERA = (
+        "**Página 27 recuperada de la imagen — TÉRMINOS Y ADVERTENCIAS.** "
+        "El OCR no pudo transcribirla; esta lectura la hizo un modelo de visión "
+        "(Qwen3.8-27B)."
+    )
+    FIN = "*(fin de la lectura automática de la imagen)*"
+
+    def _chunks(self, cuerpo: str, max_chars: int = 1200):
+        from rag.ingestion.chunker import chunk_document
+        from rag.schemas import DocumentMeta
+
+        return chunk_document(
+            "d",
+            cuerpo,
+            DocumentMeta(source_file="c.pdf", source_hash="h"),
+            max_chars=max_chars,
+            overlap_chars=100,
+        )
+
+    def _documento_largo(self) -> str:
+        parrafos = "\n\n".join(
+            f"16.{i}. CLARIANT tendrá el derecho de cancelar unilateralmente "
+            f"cualquiera y todos los acuerdos relacionados. " + "Relleno legal. " * 30
+            for i in range(1, 6)
+        )
+        return f"## Página 27\n\n{self.CABECERA}\n\n{parrafos}\n\n{self.FIN}\n"
+
+    def test_todo_fragmento_del_bloque_dice_de_donde_viene(self):
+        chunks = self._chunks(self._documento_largo())
+        con_contenido = [c for c in chunks if "CLARIANT" in c.text]
+        assert len(con_contenido) > 1, "el caso solo prueba algo si el bloque se parte"
+        for c in con_contenido:
+            assert "recuperada de la imagen" in c.text, (
+                "un fragmento de lectura automática sin cabecera es indistinguible "
+                "del texto del contrato"
+            )
+
+    def test_el_texto_posterior_al_cierre_no_hereda_la_cabecera(self):
+        cuerpo = (
+            f"## Página 27\n\n{self.CABECERA}\n\nContenido leído de la imagen.\n\n"
+            f"{self.FIN}\n\n## Página 28\n\n" + "Cláusula real del contrato. " * 120
+        )
+        chunks = self._chunks(cuerpo)
+        reales = [c for c in chunks if "Cláusula real" in c.text]
+        assert reales
+        for c in reales:
+            assert "recuperada de la imagen" not in c.text, (
+                "el articulado no puede quedar marcado como lectura de máquina"
+            )
+
+    def test_un_documento_sin_figuras_no_cambia(self):
+        cuerpo = "## Página 1\n\n" + "Cláusula primera. " * 200
+        for c in self._chunks(cuerpo):
+            assert "recuperada de la imagen" not in c.text

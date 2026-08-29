@@ -43,6 +43,7 @@ YA_INSERTADO_RE = re.compile(
 # aporta=false cuando solo hay rúbricas, y aporta=true cuando el recuadro trae
 # una fecha manuscrita que no está en el texto corrido.
 TIPOS_EXCLUIDOS = {"sello_logo", "sin_grafico", "ilegible"}
+FIN_BLOQUE = "*(fin de la lectura automática de la imagen)*"
 MAX_CONTENIDO = 6000
 UMBRAL_DUPLICADO = 0.85
 MIN_TOKENS_NUEVOS = 4
@@ -108,6 +109,10 @@ def bloque(res: dict) -> str:
     partes = [encabezado, contenido]
     if notas and res.get("confianza") != "alta":
         partes.append(f"*Nota de lectura: {notas}*")
+    # Cierre explícito: el chunker lo usa para saber dónde acaba el bloque y
+    # ponerle la cabecera a cada fragmento que lo continúe. Sin él, un bloque
+    # más largo que un chunk deja texto de máquina sin identificar.
+    partes.append(FIN_BLOQUE)
     return "\n\n".join(p for p in partes if p)
 
 
