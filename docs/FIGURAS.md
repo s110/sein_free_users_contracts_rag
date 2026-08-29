@@ -344,6 +344,27 @@ Solo se revisan los tipos donde el riesgo existe (`grafico`, `diagrama`,
 `flujograma`, `esquema_unifilar`, `mapa`, `plano`): una página transcrita o una
 tabla dibujada ya pasan la prueba de novedad contra el texto del OCR.
 
+### Tres defectos que solo aparecen sobre el corpus completo
+
+La invariante de procedencia pasaba sus tests sintéticos y aun así fallaba en
+126 fragmentos reales. Los tres fallos tienen la misma forma: una condición
+razonable sobre un caso que no había imaginado.
+
+| Qué fallaba | Cuántos | Por qué |
+|---|---|---|
+| Cabecera partida en dos líneas | 33 | El `titulo` que devuelve el modelo a veces trae un salto de línea. La cabecera es una línea; partida, su segunda mitad queda como texto de máquina sin identificar. |
+| Fragmento que abre en negrita | 93 | El guardián miraba si el texto empezaba por `**`. El contenido de una figura puede abrir con una línea en negrita propia. |
+| Solapamiento que arrastra el cierre | 79 | El empaquetador repite la cola del fragmento anterior; si esa cola llevaba el cierre del bloque, el fragmento traía contenido de figura con el bloque ya dado por cerrado. |
+
+Los arreglos: el título se colapsa a una línea, el guardián comprueba una
+cabecera de bloque de verdad en vez de dos asteriscos, y la invariante recuerda
+la última cabecera vista para ponérsela también al fragmento que arrastra el
+cierre. Hay un test por cada uno.
+
+La moraleja operativa: `verificar_enriquecimiento.py` sobre los 7.767
+documentos no es un trámite de cierre. Es donde aparecen los defectos que
+ningún test sintético produce.
+
 ### Reindexado sin reprocesar el corpus
 
 `source_hash` es el hash del **PDF**, no del markdown. Un enriquecimiento
