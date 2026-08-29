@@ -300,8 +300,19 @@ def main() -> int:
     (args.salida / "docs_a_reindexar.txt").write_text(
         "".join(f"{i['doc']}\n" for i in con_cambio), encoding="utf-8"
     )
-    print(f"\ninforme      : {args.salida / 'informe_fusion.json'}")
-    print(f"lista reindex: {args.salida / 'docs_a_reindexar.txt'}")
+    # Dos prioridades. Reindexar un documento cuesta ~8 s de embeddings en el
+    # Mac, y la mayoría cambian solo porque se les quitó un marcador con URL
+    # falsa — mejora real, pero sin información nueva. Los que ganaron una
+    # figura entran primero.
+    con_figura = [i for i in informes if i.get("insertadas")]
+    (args.salida / "docs_con_figura.txt").write_text(
+        "".join(f"{i['doc']}\n" for i in con_figura), encoding="utf-8"
+    )
+    print(f"\ninforme          : {args.salida / 'informe_fusion.json'}")
+    print(f"reindex prioritario: {args.salida / 'docs_con_figura.txt'} "
+          f"({len(con_figura)} docs con figura nueva)")
+    print(f"reindex completo   : {args.salida / 'docs_a_reindexar.txt'} "
+          f"({len(con_cambio)} docs, incluye los que solo pierden marcadores)")
     return 0
 
 

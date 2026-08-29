@@ -5,11 +5,14 @@
 # idempotente (una página que ya lleva su bloque se salta) y el reindexado
 # toca solo los documentos que cambiaron en esta pasada.
 #
-#   ./aplicar_oleada.sh            simulacro: enseña qué haría y no toca nada
-#   ./aplicar_oleada.sh --aplicar  lo hace
+#   ./aplicar_oleada.sh                  simulacro: enseña qué haría, no toca nada
+#   ./aplicar_oleada.sh --aplicar        aplica y reindexa lo que ganó una figura
+#   ./aplicar_oleada.sh --aplicar todo   reindexa además los que solo pierden
+#                                        marcadores falsos (mucho más lento)
 set -u
 
 APLICAR=${1:-}
+ALCANCE=${2:-figuras}
 FIG=osinergmin/figuras
 LOCAL=/Volumes/Datos/osinergmin_data/charts
 REPO=/Volumes/Datos/proyectos_personales/sein_free_users_contracts_rag
@@ -32,8 +35,17 @@ echo "══ 2. Traer el vault enriquecido al Mac ══"
 
 echo
 echo "══ 3. Traer la lista de documentos a reindexar ══"
-rsync -q khipu:"$FIG/out/docs_a_reindexar.txt" "$LOCAL/docs_a_reindexar.txt" || exit 1
+# Reindexar cuesta ~8 s de embeddings por documento. Por defecto entran solo
+# los que ganaron una figura; los que únicamente perdieron un marcador falso
+# mejoran igual, pero pueden esperar a una pasada nocturna.
+if [[ "$ALCANCE" == "todo" ]]; then
+  REMOTA="docs_a_reindexar.txt"
+else
+  REMOTA="docs_con_figura.txt"
+fi
+rsync -q khipu:"$FIG/out/$REMOTA" "$LOCAL/docs_a_reindexar.txt" || exit 1
 N=$(wc -l < "$LOCAL/docs_a_reindexar.txt" | tr -d ' ')
+echo "alcance: $ALCANCE ($REMOTA)"
 echo "documentos a reindexar: $N"
 [[ "$N" -eq 0 ]] && { echo "nada que reindexar"; exit 0; }
 
