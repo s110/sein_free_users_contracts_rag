@@ -200,7 +200,11 @@ async def _pedir(
                 ],
             },
         ],
-        "max_tokens": 2400,
+        # Una página rescatada puede ser un unifilar denso con decenas de
+        # rótulos; una con marcador casi siempre es una firma. Dar el mismo
+        # presupuesto a las dos trunca las primeras o desperdicia en las
+        # segundas.
+        "max_tokens": 3600 if rescate else 2000,
         "temperature": 0.0,
         # La plantilla de chat de Qwen3.8 activa el razonamiento cuando nadie
         # dice lo contrario ("enable_thinking is undefined or is true"), y el
