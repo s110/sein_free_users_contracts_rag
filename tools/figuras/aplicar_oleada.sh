@@ -31,6 +31,7 @@ ssh khipu "apptainer exec --bind \$HOME/osinergmin:\$HOME/osinergmin $SIF \
     --figuras \$HOME/$FIG/out/figuras.jsonl \
     --vault   \$HOME/osinergmin/vault \
     --salida  \$HOME/$FIG/out \
+    --verificacion \$HOME/$FIG/out/verificacion.jsonl \
     ${APLICAR}" || exit 1
 
 [[ "$APLICAR" != "--aplicar" ]] && { echo; echo "Simulacro. Con --aplicar se ejecuta."; exit 0; }

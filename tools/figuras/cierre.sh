@@ -43,6 +43,7 @@ ssh khipu "apptainer exec --bind \$HOME/osinergmin:\$HOME/osinergmin \$HOME/cont
     --figuras \$HOME/$FIG/out/figuras.jsonl \
     --vault   \$HOME/osinergmin/vault \
     --salida  \$HOME/$FIG/out \
+    --verificacion \$HOME/$FIG/out/verificacion.jsonl \
     --aplicar" || exit 1
 
 echo
