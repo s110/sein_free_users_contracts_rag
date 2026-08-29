@@ -44,6 +44,12 @@ YA_INSERTADO_RE = re.compile(
 # una fecha manuscrita que no está en el texto corrido.
 TIPOS_EXCLUIDOS = {"sello_logo", "sin_grafico", "ilegible"}
 FIN_BLOQUE = "*(fin de la lectura automática de la imagen)*"
+# Títulos que no titulan: el modelo a veces devuelve el pie de página o
+# repite la consigna. En la cabecera del bloque solo estorban.
+TITULO_VACIO_RE = re.compile(
+    r"^(?:p[áa]gina\s+\d+(?:\s+(?:de|del)\s+.*)?|\d+\s*/\s*\d+|sin\s+t[íi]tulo)$",
+    re.IGNORECASE,
+)
 MAX_CONTENIDO = 6000
 UMBRAL_DUPLICADO = 0.85
 MIN_TOKENS_NUEVOS = 4
@@ -90,6 +96,8 @@ def bloque(res: dict) -> str:
     if "\\n" in contenido and "\n" not in contenido:
         contenido = contenido.replace("\\n", "\n")
     titulo = (res.get("titulo") or "").strip()
+    if TITULO_VACIO_RE.match(titulo):
+        titulo = ""
     coletilla = f" — {titulo}" if titulo else ""
     if res.get("rescate"):
         # Página que el OCR no pudo transcribir: aquí la lectura de la imagen no
