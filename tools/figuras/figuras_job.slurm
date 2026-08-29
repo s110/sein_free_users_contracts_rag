@@ -38,9 +38,14 @@ hechos = set()
 if p.exists():
     for l in p.read_text(errors="replace").splitlines():
         try:
-            hechos.add(json.loads(l)["clave"])
+            d = json.loads(l)
         except Exception:
-            pass
+            continue
+        # Igual que el cliente: una página con error NO está hecha. Si el job
+        # las contara como hechas, una corrida en la que solo quedaran errores
+        # saldría diciendo que no hay nada que hacer y los perdería.
+        if not d.get("error"):
+            hechos.add(d["clave"])
 print(len(total - hechos))
 PY
 }
