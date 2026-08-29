@@ -13,7 +13,7 @@ se quedaba, sin llegar al índice, contenido real — flujogramas de
 procedimientos de interrupción, esquemas unifilares, anexos dibujados como
 imagen.
 
-**Alcance del problema en el corpus:** 20.845 marcadores repartidos en
+**Alcance del problema en el corpus:** 20.847 marcadores repartidos en
 **2.916 páginas** de **2.066 documentos** (de 7.767).
 
 ### La segunda fuga: páginas que el OCR no pudo leer

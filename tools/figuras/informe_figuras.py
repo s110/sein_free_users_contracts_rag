@@ -344,7 +344,7 @@ cada lectura entra al índice etiquetada como lectura de máquina.</blockquote>
 de GPU para tocar, en su mayoría, texto ya bien transcrito. Se releyó lo que dos señales
 independientes marcan como sospechoso:</p>
 <ul>
-<li><strong>El marcador del OCR.</strong> 20.845 placeholders <code>![image](…)</code> en 2.916
+<li><strong>El marcador del OCR.</strong> 20.847 placeholders <code>![image](…)</code> en 2.916
 páginas de 2.066 documentos. La URL siempre es inventada.</li>
 <li><strong>La página casi vacía.</strong> La página mediana rinde 2.865 caracteres; 1.128
 rinden menos de 250 <em>sin</em> marcador alguno. Son unifilares a página completa y escaneos
