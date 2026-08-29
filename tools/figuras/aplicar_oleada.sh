@@ -58,8 +58,13 @@ if [[ "$ALCANCE" == "sello" ]]; then
   # documento que falló al reindexar (p. ej. el embebedor cortó la conexión)
   # sale de la lista de la oleada siguiente y no volvería a intentarse nunca;
   # el sello del frontmatter sí lo sigue nombrando.
-  grep -l '^figuras_leidas:' "$VAULT"/*.md 2>/dev/null \
-    | xargs -n1 basename | sed 's/\.md$//' > "$LOCAL/docs_a_reindexar.txt"
+  # Un bucle y no `grep -l | xargs basename`: la ruta del vault contiene un
+  # espacio ("Application Support") y xargs la parte en dos. Con 7.767 ficheros
+  # el bucle tarda segundos y no tiene ese modo de fallo.
+  : > "$LOCAL/docs_a_reindexar.txt"
+  for f in "$VAULT"/*.md; do
+    grep -q '^figuras_leidas:' "$f" && basename "$f" .md >> "$LOCAL/docs_a_reindexar.txt"
+  done
   echo "alcance: sello (documentos con figuras_leidas en el frontmatter)"
 else
   if [[ "$ALCANCE" == "todo" ]]; then
