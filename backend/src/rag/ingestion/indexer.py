@@ -268,9 +268,11 @@ def ingest_vault(
     chunk_size: int = 3200,
     chunk_overlap: int = 400,
     force: bool = False,
+    force_docs: set[str] | None = None,
     max_purge_ratio: float = MAX_PURGE_RATIO,
 ) -> IngestStats:
     stats = IngestStats()
+    forzados = force_docs or set()
     dim = embedder.dimension()
     ensure_collection(client, collection, dim)
     # `existing` se consulta SIEMPRE, también con --force: sin él, los chunks
@@ -297,7 +299,15 @@ def ingest_vault(
             continue
         seen_doc_ids.add(doc.doc_id)
 
-        if not force and existing.get(doc.doc_id) == doc.meta.source_hash:
+        # `source_hash` es el hash del PDF, no del markdown: un enriquecimiento
+        # que reescribe el .md sin tocar el PDF deja el hash igual y el
+        # documento se saltaría para siempre. `force_docs` reindexa esa lista
+        # concreta sin obligar a reprocesar el vault entero.
+        if (
+            not force
+            and doc.doc_id not in forzados
+            and existing.get(doc.doc_id) == doc.meta.source_hash
+        ):
             stats.skipped += 1
             continue
 
