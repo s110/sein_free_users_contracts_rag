@@ -29,6 +29,14 @@ Entre las dos señales: **4.034 páginas** a releer, de 107.184 que tiene el
 corpus. Releerlo entero con un modelo de 27B costaría del orden de cien horas
 de GPU para tocar, en su mayoría, texto que ya está bien transcrito.
 
+Mirar esas páginas confirma la sospecha. Una que rindió 71 caracteres es un
+**diagrama unifilar** completo — subestaciones, secciones de cable (107 mm²
+AAAC), tensiones de 60 y 10 kV — del que el OCR sacó únicamente el nombre de la
+firmante. Otra de 212 caracteres es el unifilar del sistema de Hidrandina S.A.
+en Chimbote, Nepeña y Casma: números de suministro, potencias de
+transformación (24/24/10 MVA), longitudes de línea (13,60 km, 17,45 km,
+22,42 km). Nada de eso estaba en el índice.
+
 ## El modelo: Qwen3.8-27B
 
 La tarea no es OCR. Es comprensión de gráficos: reconstruir la tabla que hay
@@ -103,6 +111,33 @@ lectura, así que la corrida va con AWQ.
 
 Las tres discrepancias de esa muestra **no eran de calidad**: eran
 `JSONDecodeError` del cliente. Ver abajo.
+
+### El razonamiento estaba encendido y nadie lo había pedido
+
+Con AWQ y 16 peticiones en paralelo el ritmo real era de ~0,06 páginas/s — unas
+20 horas para el corpus — pese a que el motor reportaba 360 tokens/s de
+generación. La cuenta no cerraba: si cada respuesta fuesen ~500 tokens, 16 en
+vuelo a 360 tok/s darían 0,7 páginas/s. La única explicación posible era que
+las respuestas fuesen diez veces más largas de lo esperado.
+
+Lo eran. La plantilla de chat de Qwen3.8 dice:
+
+```jinja
+{%- if enable_thinking is undefined or enable_thinking is true %}
+```
+
+El modo de razonamiento se activa **cuando nadie dice lo contrario**. El bloque
+`<think>` se llevaba casi todo el presupuesto de tokens antes de llegar al JSON
+— lo que además explica los `JSONDecodeError`: no era el JSON el que estaba
+mal, era que la generación se agotaba en el razonamiento y se cortaba a medias.
+
+La petición ahora lleva:
+
+```json
+"chat_template_kwargs": {"enable_thinking": false}
+```
+
+Transcribir una figura no necesita cadena de pensamiento.
 
 ### El JSON del modelo no siempre es JSON
 
@@ -238,7 +273,7 @@ Reindexa exactamente esos documentos. No hace falta un `--force` sobre los
 ## Operación en Khipu
 
 ```bash
-# 1. Preparación (CPU, ~4 min para 2.916 páginas)
+# 1. Preparación (CPU, ~5 min para las 4.034 páginas)
 sbatch ~/osinergmin/figuras/prep_figuras.slurm
 
 # 2. Extracción (GPU, encadenada y reanudable)

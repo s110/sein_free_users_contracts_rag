@@ -200,8 +200,14 @@ async def _pedir(
                 ],
             },
         ],
-        "max_tokens": 3600,
+        "max_tokens": 2400,
         "temperature": 0.0,
+        # La plantilla de chat de Qwen3.8 activa el razonamiento cuando nadie
+        # dice lo contrario ("enable_thinking is undefined or is true"), y el
+        # bloque <think> se comía casi todo el presupuesto de tokens: unas
+        # respuestas se cortaban a medias y todas tardaban varias veces más.
+        # Transcribir una figura no necesita cadena de pensamiento.
+        "chat_template_kwargs": {"enable_thinking": False},
         "response_format": {
             "type": "json_schema",
             "json_schema": {"name": "figura", "schema": ESQUEMA, "strict": True},
