@@ -137,6 +137,31 @@ figuras.jsonl ──▶ fusionar_figuras.py ──▶ vault/*.md editado      (E
 docs_a_reindexar.txt ──▶ sein-rag-ingest --reindexar-lista        (local)
 ```
 
+### El marcador rinde menos de lo que parecía
+
+Sobre las primeras páginas con marcador procesadas, el resultado fue tozudo:
+
+- 9 de 12 eran **firmas y sellos** — el modelo las clasificó bien y las
+  descartó solo.
+- Las 3 restantes eran tablas dibujadas como imagen que el modelo leyó
+  correctamente… y que **el OCR ya tenía transcritas**. Medido con la prueba
+  de novedad: **cero tokens nuevos** en las tres.
+
+O sea: GLM-OCR sí captura las tablas. El `![image]` de esas páginas apunta a la
+firma de al lado, no a la tabla. El marcador señala "aquí hay algo dibujado",
+no "aquí se perdió información".
+
+Por eso el worklist se reordenó por rendimiento esperado:
+
+| Orden | Páginas | Por qué |
+|---|---|---|
+| 1º | 1.118 rescates | El índice no tiene **nada** de esas páginas |
+| 2º | 19 marcadores con alt descriptivo | `flujograma`, `diagram`, `chart`: no pueden estar en el texto |
+| 3º | 2.897 marcadores genéricos | Mayoritariamente firmas; se procesan igual, pero al final |
+
+Todo se procesa; lo que cambia es que el valor entra primero y una
+interrupción no se lleva lo importante.
+
 ### Qué se inserta y qué no
 
 Un marcador de figura no significa que se haya perdido información. La mayoría
