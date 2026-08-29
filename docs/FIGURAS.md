@@ -305,6 +305,45 @@ corpus entero, y hay tests que fijan las tres condiciones: el bloque partido
 conserva la cabecera en todos sus fragmentos, el texto posterior al cierre NO
 la hereda, y un documento sin figuras no cambia.
 
+### El modelo inventa cifras dentro de los dibujos
+
+Comprobado, no supuesto. En el flujograma SAR de un contrato de Atria, la
+lectura escribió:
+
+> Carril Proveedor SAR — **Tiempo de llegada: Max 30'**
+
+Ampliando la página, el rótulo real dice **"Tiempo de llegada / Mapa SAR"**. No
+hay ninguna cifra. El resto de esa lectura es fiel — los carriles, los rombos de
+decisión, "Reportar caso en (Teams y CRM)", "Valida con el Distribuidor de la
+Zona el tipo de falla" — con errores menores de transcripción ("MARIN SAR" por
+"MAPA SAR"). Pero se inventó un compromiso de nivel de servicio que parece
+perfectamente plausible.
+
+Esto es exactamente lo que el proyecto no puede permitirse, y el verificador
+adversario del RAG **no lo caza**: comprueba que una afirmación esté sustentada
+por el fragmento que cita, y el fragmento contiene la invención. El error se
+cometió antes, al leer la imagen.
+
+De ahí la segunda pasada, `verificar_lecturas.py`: se le devuelve al modelo la
+imagen junto con lo que escribió y se le pide que señale lo que no aparece en
+ella, con el caso del "Max 30'" en el propio prompt como ejemplo de lo que
+busca. Lo señalado no se borra —un hueco silencioso no es auditable— sino que
+se tacha en el bloque:
+
+```markdown
+- ~~Tiempo de llegada: Max 30'~~ [no confirmado]
+
+> **Una segunda lectura de la imagen no encontró esto:**
+> - Tiempo de llegada: Max 30' — el dibujo dice "Tiempo de llegada / Mapa SAR"
+```
+
+Y todo bloque de tipo dibujo lleva, además, un aviso permanente de que las
+cifras sueltas dentro de un dibujo son la parte frágil de la lectura.
+
+Solo se revisan los tipos donde el riesgo existe (`grafico`, `diagrama`,
+`flujograma`, `esquema_unifilar`, `mapa`, `plano`): una página transcrita o una
+tabla dibujada ya pasan la prueba de novedad contra el texto del OCR.
+
 ### Reindexado sin reprocesar el corpus
 
 `source_hash` es el hash del **PDF**, no del markdown. Un enriquecimiento

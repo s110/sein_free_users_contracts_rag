@@ -44,6 +44,17 @@ YA_INSERTADO_RE = re.compile(
 # una fecha manuscrita que no está en el texto corrido.
 TIPOS_EXCLUIDOS = {"sello_logo", "sin_grafico", "ilegible"}
 FIN_BLOQUE = "*(fin de la lectura automática de la imagen)*"
+# Tipos donde el modelo lee rótulos pequeños dentro de un dibujo. Se le
+# comprobó una invención: en un flujograma SAR escribió "Tiempo de llegada:
+# Max 30'" donde el diagrama dice "Tiempo de llegada / Mapa SAR". La
+# estructura y los rótulos largos salen bien; las cifras sueltas dentro de un
+# dibujo son el punto débil, y quien lea el fragmento tiene que saberlo.
+TIPOS_CON_ROTULOS = {"grafico", "diagrama", "flujograma", "esquema_unifilar", "mapa", "plano"}
+AVISO_ROTULOS = (
+    "*Aviso: las cifras y rótulos sueltos dentro de un dibujo son la parte más\n"
+    "frágil de esta lectura. No los uses como dato contractual sin mirar la\n"
+    "página original.*"
+)
 # Títulos que no titulan: el modelo a veces devuelve el pie de página o
 # repite la consigna. En la cabecera del bloque solo estorban.
 TITULO_VACIO_RE = re.compile(
@@ -117,6 +128,8 @@ def bloque(res: dict) -> str:
     partes = [encabezado, contenido]
     if notas and res.get("confianza") != "alta":
         partes.append(f"*Nota de lectura: {notas}*")
+    if res.get("tipo") in TIPOS_CON_ROTULOS:
+        partes.append(AVISO_ROTULOS)
     # Cierre explícito: el chunker lo usa para saber dónde acaba el bloque y
     # ponerle la cabecera a cada fragmento que lo continúe. Sin él, un bloque
     # más largo que un chunk deja texto de máquina sin identificar.

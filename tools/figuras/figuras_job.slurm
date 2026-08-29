@@ -45,9 +45,16 @@ print(len(total - hechos))
 PY
 }
 
+# Segunda pasada: cuántas lecturas de dibujo quedan por contrastar contra su
+# imagen. El job tiene trabajo si queda cualquiera de las dos cosas.
+por_verificar() {
+  $PY "$FIG/pendientes_verificacion.py"
+}
+
 PEND=$(pendientes | tail -1)
-echo "pendientes al arrancar: $PEND"
-if [ "${PEND:-0}" -eq 0 ]; then
+VER=$(por_verificar | tail -1)
+echo "pendientes de leer: $PEND | pendientes de verificar: $VER"
+if [ "${PEND:-0}" -eq 0 ] && [ "${VER:-0}" -eq 0 ]; then
   echo "== nada que hacer: no encadeno y salgo =="
   exit 0
 fi
@@ -98,8 +105,17 @@ $PY "$FIG/extraer_figuras.py" \
   --modelo "$NOMBRE" --concurrencia 16 --deadline $DEADLINE --salida "$SALIDA"
 rc=$?
 
+# Con la lectura terminada, la segunda pasada sobre los dibujos: se le devuelve
+# la imagen al modelo junto con lo que escribió y se le pide que señale lo que
+# no aparece en ella. El verificador adversario del RAG no puede cazar un error
+# cometido al leer la imagen; este sí.
+if [ "$(pendientes | tail -1)" -eq 0 ]; then
+  echo "== segunda pasada: contrastar las lecturas de dibujo con su imagen =="
+  $PY "$FIG/verificar_lecturas.py" --modelo "$NOMBRE" --concurrencia 12
+fi
+
 kill $VPID 2>/dev/null
 sleep 5
-echo "== cliente rc=$rc | pendientes al terminar: $(pendientes | tail -1) =="
+echo "== cliente rc=$rc | por leer: $(pendientes | tail -1) | por verificar: $(por_verificar | tail -1) =="
 echo "== fin $(date -Is) =="
 exit $rc
