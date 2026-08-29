@@ -278,6 +278,25 @@ class TestProcedenciaDeLasFiguras:
         for c in con_contenido:
             assert "recuperada de la imagen" in c.text
 
+    def test_el_solapamiento_que_arrastra_el_cierre_tambien_lleva_cabecera(self):
+        """El empaquetador repite la cola del fragmento anterior. Cuando esa
+        cola incluía el cierre del bloque, el fragmento traía contenido de
+        figura pero el bloque ya se daba por cerrado y se quedaba sin cabecera.
+        79 casos en el corpus real, todos invisibles para los tests previos."""
+        from rag.ingestion.chunker import _FIG_FIN
+
+        cuerpo = (
+            f"## Página 32\n\n{self.CABECERA}\n\n"
+            + "\n\n".join("Nodo del flujograma con su rótulo. " * 25 for _ in range(6))
+            + f"\n\n{self.FIN}\n\n## Página 33\n\n"
+            + "| a | b |\n|---|---|\n| 1 | 2 |\n"
+        )
+        chunks = self._chunks(cuerpo)
+        con_cierre = [c for c in chunks if _FIG_FIN in c.text]
+        assert con_cierre
+        for c in con_cierre:
+            assert "recuperada de la imagen" in c.text
+
     def test_un_documento_sin_figuras_no_cambia(self):
         cuerpo = "## Página 1\n\n" + "Cláusula primera. " * 200
         for c in self._chunks(cuerpo):

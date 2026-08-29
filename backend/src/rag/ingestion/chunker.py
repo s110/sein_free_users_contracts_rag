@@ -158,19 +158,24 @@ def ensure_figuras_have_provenance(chunks: list[dict]) -> None:
     Cada fragmento que continúa un bloque recibe la cabecera de su bloque.
     """
     activa: str | None = None
+    ultima: str | None = None
     for c in chunks:
         texto = c["text"]
         # "empieza por **" no servía: el contenido de una figura puede abrir con
         # una línea en negrita propia y entonces el fragmento se quedaba sin
         # cabecera. Lo que decide es si abre con una cabecera de bloque real.
         abre_bloque = bool(_FIG_INICIO_RE.match(texto.lstrip()))
-        if activa and not abre_bloque:
-            c["text"] = texto = f"{activa} (continuación)\n\n{texto}"
+        # Dos casos necesitan cabecera: el fragmento que continúa un bloque
+        # abierto, y el que arrastra el cierre del bloque por el solapamiento
+        # —el empaquetador repite la cola del fragmento anterior, así que el
+        # cierre puede reaparecer cuando el bloque ya se dio por cerrado.
+        continua = activa is not None or (_FIG_FIN in texto and ultima is not None)
+        if continua and not abre_bloque and ultima:
+            c["text"] = texto = f"{ultima} (continuación)\n\n{texto}"
         cabeceras = _FIG_INICIO_RE.findall(texto)
         if cabeceras:
-            ultima = cabeceras[-1]
-            # Si tras la última cabecera aparece el cierre, el bloque acabó aquí.
-            resto = texto[texto.rfind(ultima) + len(ultima) :]
+            ultima = cabeceras[-1].replace(" (continuación)", "")
+            resto = texto[texto.rfind(cabeceras[-1]) + len(cabeceras[-1]) :]
             activa = None if _FIG_FIN in resto else ultima
         elif activa and _FIG_FIN in texto:
             activa = None
