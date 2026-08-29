@@ -388,6 +388,17 @@ Es reanudable por clave: `figuras.jsonl` lleva un `clave` por línea y una
 segunda corrida salta lo ya hecho. Con 8 h de wall time en la QoS
 `a-postgrado`, eso no es un lujo.
 
+### El job encadenado lleva el script de cuando se envió, no el de ahora
+
+SLURM copia el script de lote en el momento del `sbatch`. El sucesor se
+registra al arrancar el job actual, así que **queda congelado con el script de
+ese instante**. Editar `figuras_job.slurm` a mitad de una corrida no llega al
+sucesor: los ficheros Python sí (se leen al ejecutarse), el `.slurm` no.
+
+Pasó en esta corrida: el paso de verificación se añadió con el job ya en
+marcha, y el sucesor encadenado habría salido sin ejecutarlo. La salida es
+cancelar el sucesor y enviar uno nuevo, que sí toma el script actual.
+
 ### El cliente corre con el Python del contenedor, no con un venv
 
 Khipu es heterogéneo. En el nodo de login `/usr/bin/python3` es 3.11; en `ds001`
