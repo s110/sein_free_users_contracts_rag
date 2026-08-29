@@ -7,6 +7,12 @@
 #
 #   ./aplicar_oleada.sh                  simulacro: enseña qué haría, no toca nada
 #   ./aplicar_oleada.sh --aplicar        aplica y reindexa lo que ganó una figura
+#                                        EN ESTA pasada
+#   ./aplicar_oleada.sh --aplicar sello  reindexa TODO documento que lleve el
+#                                        sello `figuras_leidas` en su frontmatter.
+#                                        Es la pasada de cierre: recupera los que
+#                                        fallaron por un corte del embebedor en
+#                                        alguna oleada anterior.
 #   ./aplicar_oleada.sh --aplicar todo   reindexa además los que solo pierden
 #                                        marcadores falsos (mucho más lento)
 set -u
@@ -47,14 +53,24 @@ echo "══ 3. Traer la lista de documentos a reindexar ══"
 # Reindexar cuesta ~8 s de embeddings por documento. Por defecto entran solo
 # los que ganaron una figura; los que únicamente perdieron un marcador falso
 # mejoran igual, pero pueden esperar a una pasada nocturna.
-if [[ "$ALCANCE" == "todo" ]]; then
-  REMOTA="docs_a_reindexar.txt"
+if [[ "$ALCANCE" == "sello" ]]; then
+  # La lista se saca del propio vault, no de lo que cambió en esta pasada. Un
+  # documento que falló al reindexar (p. ej. el embebedor cortó la conexión)
+  # sale de la lista de la oleada siguiente y no volvería a intentarse nunca;
+  # el sello del frontmatter sí lo sigue nombrando.
+  grep -l '^figuras_leidas:' "$VAULT"/*.md 2>/dev/null \
+    | xargs -n1 basename | sed 's/\.md$//' > "$LOCAL/docs_a_reindexar.txt"
+  echo "alcance: sello (documentos con figuras_leidas en el frontmatter)"
 else
-  REMOTA="docs_con_figura.txt"
+  if [[ "$ALCANCE" == "todo" ]]; then
+    REMOTA="docs_a_reindexar.txt"
+  else
+    REMOTA="docs_con_figura.txt"
+  fi
+  rsync -q khipu:"$FIG/out/$REMOTA" "$LOCAL/docs_a_reindexar.txt" || exit 1
+  echo "alcance: $ALCANCE ($REMOTA)"
 fi
-rsync -q khipu:"$FIG/out/$REMOTA" "$LOCAL/docs_a_reindexar.txt" || exit 1
 N=$(wc -l < "$LOCAL/docs_a_reindexar.txt" | tr -d ' ')
-echo "alcance: $ALCANCE ($REMOTA)"
 echo "documentos a reindexar: $N"
 [[ "$N" -eq 0 ]] && { echo "nada que reindexar"; exit 0; }
 
