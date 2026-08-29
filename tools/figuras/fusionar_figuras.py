@@ -126,7 +126,11 @@ def bloque(res: dict) -> str:
     # renderizaría nunca.
     if "\\n" in contenido and "\n" not in contenido:
         contenido = contenido.replace("\\n", "\n")
-    titulo = (res.get("titulo") or "").strip()
+    # El título va DENTRO de la cabecera, que tiene que ser una sola línea: si
+    # trae un salto (el modelo devolvió "ANEXO 3\nPOTENCIA"), la cabecera se
+    # parte y la segunda mitad queda como texto de máquina sin identificar, que
+    # es justo lo que la cabecera existe para evitar.
+    titulo = " ".join((res.get("titulo") or "").split())[:120]
     if TITULO_VACIO_RE.match(titulo):
         titulo = ""
     coletilla = f" — {titulo}" if titulo else ""

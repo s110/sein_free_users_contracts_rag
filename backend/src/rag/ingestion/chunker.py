@@ -160,7 +160,11 @@ def ensure_figuras_have_provenance(chunks: list[dict]) -> None:
     activa: str | None = None
     for c in chunks:
         texto = c["text"]
-        if activa and not texto.lstrip().startswith("**"):
+        # "empieza por **" no servía: el contenido de una figura puede abrir con
+        # una línea en negrita propia y entonces el fragmento se quedaba sin
+        # cabecera. Lo que decide es si abre con una cabecera de bloque real.
+        abre_bloque = bool(_FIG_INICIO_RE.match(texto.lstrip()))
+        if activa and not abre_bloque:
             c["text"] = texto = f"{activa} (continuación)\n\n{texto}"
         cabeceras = _FIG_INICIO_RE.findall(texto)
         if cabeceras:

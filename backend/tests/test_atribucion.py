@@ -263,6 +263,21 @@ class TestProcedenciaDeLasFiguras:
                 "el articulado no puede quedar marcado como lectura de máquina"
             )
 
+    def test_el_fragmento_que_abre_con_negrita_propia_igual_lleva_cabecera(self):
+        """El guardián miraba si el texto empezaba por `**`, y el contenido de
+        una figura puede abrir con una línea en negrita suya: esos fragmentos
+        se quedaban sin cabecera. 93 de ellos en el corpus real."""
+        cuerpo = (
+            f"## Página 12\n\n{self.CABECERA}\n\n"
+            + "\n\n".join(f"**Carril {i}**\n\n" + "Paso del proceso. " * 40 for i in range(1, 6))
+            + f"\n\n{self.FIN}\n"
+        )
+        chunks = self._chunks(cuerpo)
+        con_contenido = [c for c in chunks if "Carril" in c.text]
+        assert len(con_contenido) > 1, "el caso solo prueba algo si el bloque se parte"
+        for c in con_contenido:
+            assert "recuperada de la imagen" in c.text
+
     def test_un_documento_sin_figuras_no_cambia(self):
         cuerpo = "## Página 1\n\n" + "Cláusula primera. " * 200
         for c in self._chunks(cuerpo):
