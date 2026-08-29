@@ -256,14 +256,22 @@ def main() -> int:
         )
 
     if args.aplicar:
-        marca = datetime.now().strftime("%Y%m%d_%H%M%S")
-        copia = args.salida / f"vault_backup_{marca}.tar.gz"
-        copia.parent.mkdir(parents=True, exist_ok=True)
-        print(f"respaldando el vault en {copia} …", flush=True)
-        with tarfile.open(copia, "w:gz") as tar:
-            for md in sorted(args.vault.glob("*.md")):
-                tar.add(md, arcname=md.name)
-        print(f"respaldo listo ({copia.stat().st_size / 1e6:.0f} MB)", flush=True)
+        args.salida.mkdir(parents=True, exist_ok=True)
+        # Un solo respaldo, el del vault virgen. La fusión es determinista a
+        # partir de figuras.jsonl, así que desde ese estado se reconstruye
+        # cualquier oleada; hacer un tar de 7.767 ficheros en cada pasada solo
+        # cuesta minutos y disco.
+        previos = sorted(args.salida.glob("vault_backup_*.tar.gz"))
+        if previos:
+            print(f"respaldo previo del vault virgen: {previos[0].name}", flush=True)
+        else:
+            marca = datetime.now().strftime("%Y%m%d_%H%M%S")
+            copia = args.salida / f"vault_backup_{marca}.tar.gz"
+            print(f"respaldando el vault virgen en {copia} …", flush=True)
+            with tarfile.open(copia, "w:gz") as tar:
+                for md in sorted(args.vault.glob("*.md")):
+                    tar.add(md, arcname=md.name)
+            print(f"respaldo listo ({copia.stat().st_size / 1e6:.0f} MB)", flush=True)
 
     informes = []
     for doc, res in sorted(resultados.items()):

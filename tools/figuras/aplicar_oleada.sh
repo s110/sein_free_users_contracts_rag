@@ -31,7 +31,16 @@ ssh khipu "apptainer exec --bind \$HOME/osinergmin:\$HOME/osinergmin $SIF \
 
 echo
 echo "══ 2. Traer el vault enriquecido al Mac ══"
-/usr/bin/rsync -az --info=stats2 khipu:osinergmin/vault/ "$VAULT/" | tail -4 || exit 1
+# macOS trae openrsync (compatible con rsync 2.6.9): no entiende --info=.
+# Y nada de tuberías aquí: en zsh el estado de una tubería es el del último
+# comando, así que `rsync ... | tail` devolvía 0 aunque rsync fallara y el
+# script seguía adelante reindexando un vault que no se habia actualizado.
+SALIDA_RSYNC=$(/usr/bin/rsync -az --stats khipu:osinergmin/vault/ "$VAULT/" 2>&1)
+RC=$?
+if [[ $RC -ne 0 ]]; then
+  echo "rsync falló (rc=$RC):"; echo "$SALIDA_RSYNC" | tail -5; exit 1
+fi
+echo "$SALIDA_RSYNC" | grep -E "files transferred|Number of files transferred|total size" | head -3
 
 echo
 echo "══ 3. Traer la lista de documentos a reindexar ══"
