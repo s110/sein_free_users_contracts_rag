@@ -243,7 +243,15 @@ def main() -> int:
     ap.add_argument("--salida", type=Path, default=BASE / "informe_figuras.html")
     args = ap.parse_args()
 
-    filas = [json.loads(l) for l in args.figuras.read_text().splitlines() if l.strip()]
+    # El fichero acumula una línea por intento: una página que fallo y luego se
+    # releyó aparece dos veces. Se queda la última lectura de cada clave, que es
+    # el estado real de esa página.
+    por_clave: dict[str, dict] = {}
+    for l in args.figuras.read_text().splitlines():
+        if l.strip():
+            d = json.loads(l)
+            por_clave[d["clave"]] = d
+    filas = list(por_clave.values())
     buenos = [f for f in filas if not f.get("error")]
     errores = len(filas) - len(buenos)
     aportan = [f for f in buenos if f.get("aporta_informacion")]
@@ -273,7 +281,8 @@ def main() -> int:
     if args.fusion.exists():
         inf = json.loads(args.fusion.read_text())
         fusion = {
-            "docs": sum(1 for i in inf if i.get("cambio")),
+            "docs": sum(1 for i in inf if i.get("insertadas")),
+            "tocados": sum(1 for i in inf if i.get("cambio")),
             "insertadas": sum(i.get("insertadas", 0) for i in inf),
             "marcadores": sum(i.get("marcadores_borrados", 0) for i in inf),
         }
@@ -345,10 +354,10 @@ marcadores se quedaba, sin llegar al índice, contenido real.</p>
 </header>
 
 <section class="cifras">
-<div class="dato"><b>{len(filas):,}</b><span>páginas releídas</span></div>
+<div class="dato"><b>{len(buenos):,}</b><span>páginas releídas</span></div>
 <div class="dato"><b>{len(aportan):,}</b><span>con información nueva</span></div>
 <div class="dato"><b>{len(buenos) - len(aportan):,}</b><span>solo sellos y firmas</span></div>
-<div class="dato"><b>{errores}</b><span>errores de lectura</span></div>
+<div class="dato"><b>{errores}</b><span>que el modelo no pudo leer</span></div>
 </section>
 
 <div class="prosa">
@@ -399,7 +408,7 @@ firmante.</p>
 <table><thead><tr><th>Tipo de elemento</th><th class="n">Páginas</th></tr></thead><tbody>{fila_tipos}</tbody></table>
 </div>
 <div class="prosa">
-{f'<p>Al fusionar: <strong>{fusion["insertadas"]:,}</strong> lecturas insertadas en <strong>{fusion["docs"]:,}</strong> documentos, y <strong>{fusion["marcadores"]:,}</strong> marcadores con URL falsa eliminados del corpus.</p>' if fusion else ''}
+{f'<p>Al fusionar: <strong>{fusion["insertadas"]:,}</strong> lecturas insertadas en <strong>{fusion["docs"]:,}</strong> documentos. Y, con figura o sin ella, <strong>{fusion["marcadores"]:,}</strong> marcadores con URL inventada desaparecieron de <strong>{fusion["tocados"]:,}</strong> documentos.</p>' if fusion else ''}
 
 <h2><span class="paso">Etapa 4 — desconfiar</span>El modelo inventa cifras dentro de los dibujos</h2>
 <p>Comprobado, no supuesto. En el flujograma de atención de interrupciones de un contrato de

@@ -99,8 +99,28 @@ def sellar_frontmatter(texto: str, n: int) -> str:
     return f"---\n{cabecera.rstrip()}\n{sello}\n{texto[fin + 1:]}"
 
 
+def marcar_dudosas(contenido: str, dudosas: list[dict]) -> tuple[str, list[str]]:
+    """Tacha en el texto lo que la segunda pasada no encontró en la imagen.
+
+    Se tacha en vez de borrar: quien lea el fragmento tiene que ver que ahí el
+    modelo escribió algo y que no se pudo confirmar. Borrarlo en silencio deja
+    un hueco que nadie puede auditar.
+    """
+    avisos = []
+    for d in dudosas:
+        frag = (d.get("fragmento") or "").strip()
+        if not frag or frag not in contenido:
+            if frag:
+                avisos.append(f"{frag} — {d.get('motivo', '')}".strip(" —"))
+            continue
+        contenido = contenido.replace(frag, f"~~{frag}~~ [no confirmado]")
+        avisos.append(f"{frag} — {d.get('motivo', '')}".strip(" —"))
+    return contenido, avisos
+
+
 def bloque(res: dict) -> str:
     contenido = (res.get("contenido_markdown") or "").strip()[:MAX_CONTENIDO]
+    dudosas = res.get("_dudosas") or []
     # Red de seguridad: si el modelo escapó los saltos de línea dos veces, la
     # tabla llegaría como una sola línea con "\\n" literales y no se
     # renderizaría nunca.
@@ -124,8 +144,16 @@ def bloque(res: dict) -> str:
             f"Tipo: {res['tipo']}. Lectura automática con modelo de visión "
             f"({res.get('modelo_corto', 'Qwen3.8-27B')}); no es texto transcrito del contrato."
         )
+    avisos: list[str] = []
+    if dudosas:
+        contenido, avisos = marcar_dudosas(contenido, dudosas)
     notas = (res.get("notas") or "").strip()
     partes = [encabezado, contenido]
+    if avisos:
+        lista = "\n".join(f"> - {a}" for a in avisos[:6])
+        partes.append(
+            "> **Una segunda lectura de la imagen no encontró esto:**\n" + lista
+        )
     if notas and res.get("confianza") != "alta":
         partes.append(f"*Nota de lectura: {notas}*")
     if res.get("tipo") in TIPOS_CON_ROTULOS:
@@ -265,17 +293,41 @@ def procesar_documento(md: Path, resultados: list[dict], aplicar: bool) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--figuras", type=Path, required=True)
+    ap.add_argument(
+        "--verificacion",
+        type=Path,
+        help="Salida de verificar_lecturas.py: marca en el bloque lo que la "
+        "segunda pasada no encontró en la imagen",
+    )
     ap.add_argument("--vault", type=Path, default=VAULT)
     ap.add_argument("--aplicar", action="store_true", help="sin esto es un simulacro")
     ap.add_argument("--salida", type=Path, default=Path("/Volumes/Datos/osinergmin_data/charts"))
     args = ap.parse_args()
 
+    verificacion: dict[str, list[dict]] = {}
+    if args.verificacion and args.verificacion.exists():
+        for linea in args.verificacion.read_text(encoding="utf-8").splitlines():
+            if not linea.strip():
+                continue
+            v = json.loads(linea)
+            if v.get("dudosas"):
+                verificacion[v["clave"]] = v["dudosas"]
+        print(f"lecturas con reparos de la segunda pasada: {len(verificacion)}")
+
     resultados: dict[str, list[dict]] = {}
     tipos: dict[str, int] = {}
+    errores_lectura = 0
     for linea in args.figuras.read_text(encoding="utf-8").splitlines():
         if not linea.strip():
             continue
         r = json.loads(linea)
+        # Las filas de error solo llevan `clave` y el motivo: no tienen `doc`
+        # ni contenido que fusionar. Se cuentan aparte y no entran al bucle.
+        if r.get("error") or "doc" not in r:
+            errores_lectura += 1
+            continue
+        if r["clave"] in verificacion:
+            r["_dudosas"] = verificacion[r["clave"]]
         resultados.setdefault(r["doc"], []).append(r)
         tipos[r.get("tipo") or f"error:{str(r.get('error'))[:20]}"] = (
             tipos.get(r.get("tipo") or f"error:{str(r.get('error'))[:20]}", 0) + 1
@@ -317,6 +369,7 @@ def main() -> int:
 
     print(f"\n{'APLICADO' if args.aplicar else 'SIMULACRO'}")
     print(f"documentos con resultado : {len(resultados)}")
+    print(f"filas de error saltadas  : {errores_lectura}")
     print(f"documentos modificados   : {len(con_cambio)}")
     print(f"figuras insertadas       : {insertadas}")
     print(f"marcadores falsos borrados: {borrados}")

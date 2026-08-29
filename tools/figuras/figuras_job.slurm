@@ -114,10 +114,11 @@ rc=$?
 # la imagen al modelo junto con lo que escribió y se le pide que señale lo que
 # no aparece en ella. El verificador adversario del RAG no puede cazar un error
 # cometido al leer la imagen; este sí.
-if [ "$(pendientes | tail -1)" -eq 0 ]; then
-  echo "== segunda pasada: contrastar las lecturas de dibujo con su imagen =="
-  $PY "$FIG/verificar_lecturas.py" --modelo "$NOMBRE" --concurrencia 12
-fi
+# La verificación no espera a que la lectura esté al 100 %: son trabajos
+# independientes, y unas pocas páginas que fallan siempre (el modelo no puede
+# leerlas) bloqueaban la segunda pasada de las 4.000 que sí se leyeron.
+echo "== segunda pasada: contrastar las lecturas de dibujo con su imagen =="
+$PY "$FIG/verificar_lecturas.py" --modelo "$NOMBRE" --concurrencia 12
 
 kill $VPID 2>/dev/null
 sleep 5
