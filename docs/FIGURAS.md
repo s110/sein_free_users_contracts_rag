@@ -216,6 +216,26 @@ Entra en el vault únicamente lo que cumple las tres condiciones:
 
 Los marcadores `![image](url-alucinada)` se borran en todos los casos.
 
+#### Por qué `sin_grafico` se descarta aunque el modelo diga que aporta
+
+Sobre las primeras 463 páginas de rescate, 388 salieron como `sin_grafico` — la
+página no tiene ningún elemento gráfico — y 114 de ellas venían con
+`aporta_informacion: true` y más de 40 caracteres. Mirar esa banda decide la
+regla:
+
+```
+74 chars   Suministro de Potencia y Energía 2023-2025 | ANEXO 3 | (ELIMINADO)
+89 chars   ESTA CARILLA ESTA EN BLANCO — cualquier texto que se coloque…
+125 chars  CONTRATO DE SUMINISTRO … ENTRE ENERSUR S.A. Y PESQUERA CENTINELA
+115 chars  DocuSign Envelope ID: 57DB4698… | ANEXO G | PROPUESTA ECONÓMICA
+```
+
+Portadas, carátulas de anexo y avisos de página en blanco. Las partes y la
+fecha ya están en el frontmatter, y el resto es ruido en el índice. Se
+descartan a propósito: la recuperación real de esas páginas está en los tipos
+`pagina_rescatada`, `grafico` y `tabla_imagen`, que sí son contenido que no
+existía en ninguna otra parte.
+
 ### Dos prompts, porque son dos problemas
 
 Una página con marcador tiene su texto ya transcrito: pedirle al modelo que lo
