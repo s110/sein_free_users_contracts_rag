@@ -8,13 +8,12 @@ diagrama, un flujograma o un gráfico escribe un placeholder y sigue:
 ![image](https://i.imgur.com/3X77777.png)
 ```
 
-Esa URL es una alucinación: no apunta a nada, nunca existió. Y detrás de ella
-se quedaba, sin llegar al índice, contenido real — flujogramas de
-procedimientos de interrupción, esquemas unifilares, anexos dibujados como
-imagen.
+Esa URL es una alucinación: no apunta a nada, nunca existió.
 
-**Alcance del problema en el corpus:** 20.847 marcadores repartidos en
-**2.916 páginas** de **2.066 documentos** (de 7.767).
+**Alcance en el corpus:** 20.847 marcadores repartidos en **2.916 páginas** de
+**2.066 documentos** (de 7.767). Cuánto de eso era información realmente
+perdida resultó ser otra pregunta, y la respuesta está más abajo: menos de lo
+que parecía.
 
 ### La segunda fuga: páginas que el OCR no pudo leer
 
