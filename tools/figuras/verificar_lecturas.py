@@ -144,7 +144,7 @@ async def revisar(
         }
         for intento in range(3):
             try:
-                r = await cliente.post("/v1/chat/completions", json=cuerpo, timeout=420)
+                r = await cliente.post("/v1/chat/completions", json=cuerpo, timeout=900)
                 r.raise_for_status()
                 txt = r.json()["choices"][0]["message"]["content"] or ""
                 try:

@@ -239,7 +239,11 @@ async def _pedir(
     }
     for intento in range(3):
         try:
-            r = await cliente.post("/v1/chat/completions", json=cuerpo, timeout=420)
+            # 420 s se quedaban cortos: el reloj corre desde que se envía, incluida la
+            # espera en cola del motor, y los flujogramas densos generan salidas
+            # largas. Todos los ReadTimeout medidos fueron diagramas de página
+            # normal, no imágenes grandes.
+            r = await cliente.post("/v1/chat/completions", json=cuerpo, timeout=900)
             r.raise_for_status()
             eleccion = r.json()["choices"][0]
             txt = eleccion["message"]["content"] or ""
