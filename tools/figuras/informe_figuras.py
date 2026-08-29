@@ -238,6 +238,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--figuras", type=Path, default=BASE / "out" / "figuras.jsonl")
     ap.add_argument("--fusion", type=Path, default=BASE / "informe_fusion.json")
+    ap.add_argument("--verificacion", type=Path, default=BASE / "out" / "verificacion.jsonl")
     ap.add_argument("--muestras", type=int, default=18)
     ap.add_argument("--salida", type=Path, default=BASE / "informe_figuras.html")
     args = ap.parse_args()
@@ -250,6 +251,23 @@ def main() -> int:
     tipos: dict[str, int] = {}
     for f in buenos:
         tipos[f.get("tipo", "?")] = tipos.get(f.get("tipo", "?"), 0) + 1
+
+    revisadas = reparos = 0
+    ejemplos_reparo: list[tuple[str, str, str]] = []
+    if args.verificacion.exists():
+        for linea in args.verificacion.read_text(encoding="utf-8").splitlines():
+            if not linea.strip():
+                continue
+            v = json.loads(linea)
+            if v.get("error"):
+                continue
+            revisadas += 1
+            for d in v.get("dudosas") or []:
+                reparos += 1
+                if len(ejemplos_reparo) < 6:
+                    ejemplos_reparo.append(
+                        (v["clave"], d.get("fragmento", ""), d.get("motivo", ""))
+                    )
 
     fusion = {}
     if args.fusion.exists():
@@ -289,6 +307,27 @@ def main() -> int:
         f"<tr><td>{html.escape(k)}</td><td class='n'>{v}</td></tr>"
         for k, v in sorted(tipos.items(), key=lambda x: -x[1])
     )
+
+    if revisadas:
+        filas_rep = "".join(
+            f"<tr><td><code>{html.escape(k[:40])}</code></td>"
+            f"<td>{html.escape(f[:70])}</td><td>{html.escape(m[:90])}</td></tr>"
+            for k, f, m in ejemplos_reparo
+        )
+        revision_html = (
+            f'<p><strong>{revisadas:,}</strong> lecturas de dibujo pasaron por la segunda '
+            f'pasada; <strong>{reparos:,}</strong> afirmaciones quedaron marcadas como no '
+            f'confirmadas.</p>'
+            + (
+                '<div class="desborde"><table><thead><tr><th>Página</th>'
+                '<th>Lo que escribió</th><th>Por qué no se confirma</th></tr></thead>'
+                f"<tbody>{filas_rep}</tbody></table></div>"
+                if filas_rep
+                else ""
+            )
+        )
+    else:
+        revision_html = ""
 
     doc = f"""<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -362,7 +401,25 @@ firmante.</p>
 <div class="prosa">
 {f'<p>Al fusionar: <strong>{fusion["insertadas"]:,}</strong> lecturas insertadas en <strong>{fusion["docs"]:,}</strong> documentos, y <strong>{fusion["marcadores"]:,}</strong> marcadores con URL falsa eliminados del corpus.</p>' if fusion else ''}
 
-<h2><span class="paso">Etapa 4 — indexar</span>Cómo entra sin contaminar el índice</h2>
+<h2><span class="paso">Etapa 4 — desconfiar</span>El modelo inventa cifras dentro de los dibujos</h2>
+<p>Comprobado, no supuesto. En el flujograma de atención de interrupciones de un contrato de
+Atria, la lectura escribió <strong>«Tiempo de llegada: Max 30'»</strong>. Ampliando la página,
+el rótulo real dice <strong>«Tiempo de llegada / Mapa SAR»</strong>: no hay ninguna cifra. Todo
+lo demás de esa lectura es fiel — los carriles, los rombos de decisión, «Reportar caso en
+(Teams y CRM)» — pero se inventó un compromiso de nivel de servicio perfectamente plausible.</p>
+<p>El verificador adversario del RAG <em>no puede cazar esto</em>: comprueba que una afirmación
+esté sustentada por el fragmento que cita, y el fragmento contiene la invención. El error se
+cometió antes, al leer la imagen.</p>
+<p>Por eso hay una segunda pasada que devuelve la imagen al modelo junto con lo que escribió y
+le pide que señale lo que no aparece en ella. Lo señalado no se borra —un hueco silencioso no
+se puede auditar— sino que se tacha con su motivo:</p>
+<pre class="bloque">- ~~Tiempo de llegada: Max 30'~~ [no confirmado]
+
+&gt; **Una segunda lectura de la imagen no encontró esto:**
+&gt; - Tiempo de llegada: Max 30' — el dibujo dice "Tiempo de llegada / Mapa SAR"</pre>
+{revision_html}
+
+<h2><span class="paso">Etapa 5 — indexar</span>Cómo entra sin contaminar el índice</h2>
 <p>Una lectura de máquina mezclada con el articulado sería indistinguible de una cláusula, y
 el verificador adversario la daría por buena. Por eso cada bloque se identifica:</p>
 </div>
