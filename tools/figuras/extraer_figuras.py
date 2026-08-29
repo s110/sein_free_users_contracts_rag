@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import io
 import json
 import os
 import sys
@@ -19,6 +20,7 @@ import time
 from pathlib import Path
 
 import httpx
+from PIL import Image
 
 BASE = Path(os.environ.get("FIG_BASE", Path.home() / "osinergmin" / "figuras"))
 IMGS = BASE / "imgs"
@@ -129,8 +131,26 @@ def cargar_hechos(SALIDA: Path) -> set[str]:
     return hechos
 
 
+# Un A4 a 200 DPI son ~3,9 Mpx (~1.250 tokens de imagen). Los planos de gran
+# formato del corpus llegan a 36 Mpx: ~11.500 tokens, que con el prompt y la
+# respuesta no caben en los 16.384 del contexto y el servidor devuelve 400.
+# Reducirlos a 12 Mpx (~3.800 tokens) deja sitio de sobra y conserva bastante
+# más detalle que bajar el DPI de todo el corpus.
+MAX_PIXELES = 12_000_000
+
+
 def b64(path: Path) -> str:
-    return base64.b64encode(path.read_bytes()).decode("ascii")
+    with Image.open(path) as im:
+        if im.width * im.height <= MAX_PIXELES:
+            return base64.b64encode(path.read_bytes()).decode("ascii")
+        factor = (MAX_PIXELES / (im.width * im.height)) ** 0.5
+        chico = im.convert("RGB").resize(
+            (max(1, int(im.width * factor)), max(1, int(im.height * factor))),
+            Image.LANCZOS,
+        )
+        buf = io.BytesIO()
+        chico.save(buf, "JPEG", quality=90, optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def parsear(texto: str) -> dict:
