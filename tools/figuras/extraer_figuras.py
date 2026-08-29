@@ -167,7 +167,12 @@ def parsear(texto: str) -> dict:
         pass
     i, j = texto.find("{"), texto.rfind("}")
     if i == -1 or j <= i:
-        raise
+        # `raise` a secas aquí no relanzaba nada: el `except … pass` de arriba
+        # ya había cerrado el contexto de la excepción, así que Python lanzaba
+        # `RuntimeError: No active exception to reraise`. Eso además se salía
+        # de la rama que guarda `crudo` y `finish_reason`, y dejaba 12 páginas
+        # fallando sin ningún diagnóstico de por qué.
+        raise json.JSONDecodeError("la respuesta no contiene ningún objeto JSON", texto, 0)
     return json.loads(texto[i : j + 1])
 
 
