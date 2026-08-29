@@ -17,6 +17,7 @@ corpus nuevo que enriquecer.
 | `verificar_enriquecimiento.py` | local | Comprueba las invariantes del vault enriquecido |
 | `comparar_cuantizacion.py` | local | FP8 vs AWQ sobre las mismas páginas |
 | `informe_figuras.py` | local | Página HTML de revisión: escaneo contra lo leído |
+| `aplicar_oleada.sh` | local | Encadena fusión → rsync → reindexado → verificación |
 
 SLURM: `prep_figuras.slurm` (CPU), `figuras_job.slurm` (GPU, encadenado y
 reanudable), `figuras_smoke.slurm` (validación del stack en una hora).
@@ -46,8 +47,15 @@ backend/.venv/bin/python tools/figuras/verificar_enriquecimiento.py
   tools/figuras/informe_figuras.py
 ```
 
-`fusionar_figuras.py` sin `--aplicar` es un simulacro: imprime el recuento y
-los motivos de descarte sin tocar un solo fichero. Conviene mirarlo antes.
+`aplicar_oleada.sh` hace los cuatro últimos pasos de una vez y se puede correr
+varias veces mientras la extracción avanza: la fusión es idempotente y el
+reindexado toca solo los documentos que cambiaron en esa pasada. Sin
+`--aplicar` es un simulacro que imprime el recuento y los motivos de descarte
+sin tocar un solo fichero. Conviene mirarlo antes.
+
+Aunque una página no aporte ninguna figura, su documento cambia igual: los
+marcadores `![image](https://i.imgur.com/…)` se borran siempre. Son URLs
+inventadas por el OCR dentro de un corpus legal.
 
 ## Dos avisos que cuestan caro si se ignoran
 
