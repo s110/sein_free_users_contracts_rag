@@ -373,7 +373,7 @@ documento se saltaría para siempre. De ahí `--reindexar-lista`:
 
 ```bash
 docker compose run --rm \
-  -v /Volumes/Datos/osinergmin_data/charts/docs_a_reindexar.txt:/data/lista.txt:ro \
+  -v /Volumes/Datos/proyectos_data/osinergmin/charts/docs_a_reindexar.txt:/data/lista.txt:ro \
   ingest sein-rag-ingest --reindexar-lista /data/lista.txt
 ```
 

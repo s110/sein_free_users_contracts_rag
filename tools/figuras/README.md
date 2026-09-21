@@ -44,7 +44,7 @@ backend/.venv/bin/python tools/figuras/verificar_enriquecimiento.py
 
 # informe_figuras.py necesita Pillow para las miniaturas; el venv del backend
 # no lo trae y el del pipeline OCR sí.
-/Volumes/Datos/proyectos_personales/ocr_pdf_markdown/.venv/bin/python \
+/Volumes/Datos/proyectos/ocr_pdf_markdown/.venv/bin/python \
   tools/figuras/informe_figuras.py
 ```
 

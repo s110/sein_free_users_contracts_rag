@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/Volumes/Datos/proyectos_personales/sein_free_users_contracts_rag/backend/src")
+sys.path.insert(0, "/Volumes/Datos/proyectos/sein_free_users_contracts_rag/backend/src")
 
 from rag.ingestion.chunker import chunk_document  # noqa: E402
 from rag.ingestion.loader import load_document  # noqa: E402

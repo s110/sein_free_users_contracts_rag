@@ -14,8 +14,8 @@ set -u
 
 APLICAR=${1:-}
 FIG=osinergmin/figuras
-LOCAL=/Volumes/Datos/osinergmin_data/charts
-REPO=/Volumes/Datos/proyectos_personales/sein_free_users_contracts_rag
+LOCAL=/Volumes/Datos/proyectos_data/osinergmin/charts
+REPO=/Volumes/Datos/proyectos/sein_free_users_contracts_rag
 VAULT="/Users/sebastianlopez/Library/Application Support/osinergmin/vault"
 
 echo "══ 0. Estado de la extracción ══"

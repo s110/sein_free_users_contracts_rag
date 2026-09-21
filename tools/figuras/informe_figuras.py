@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PIL import Image
 
-BASE = Path("/Volumes/Datos/osinergmin_data/charts")
+BASE = Path("/Volumes/Datos/proyectos_data/osinergmin/charts")
 ANCHO = 700
 CALIDAD = 70
 

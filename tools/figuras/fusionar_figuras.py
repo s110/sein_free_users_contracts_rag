@@ -305,7 +305,7 @@ def main() -> int:
     )
     ap.add_argument("--vault", type=Path, default=VAULT)
     ap.add_argument("--aplicar", action="store_true", help="sin esto es un simulacro")
-    ap.add_argument("--salida", type=Path, default=Path("/Volumes/Datos/osinergmin_data/charts"))
+    ap.add_argument("--salida", type=Path, default=Path("/Volumes/Datos/proyectos_data/osinergmin/charts"))
     args = ap.parse_args()
 
     verificacion: dict[str, list[dict]] = {}
