@@ -29,6 +29,7 @@ preguntas citando documento, sección y página.
 | Capa | Tecnología | Por qué |
 |---|---|---|
 | LLM | [Qwen3.5 4B](https://ollama.com/library/qwen3.5) vía Ollama | Sucesor de Qwen3 4B (mar 2026): 201 idiomas, 256K de contexto, mismo footprint |
+| LLM en nube (opcional) | [DeepSeek V4.1 Flash](https://api-docs.deepseek.com/) (`deepseek-flash`) con `RAG_LLM_PROVIDER=deepseek` | $0,15/M entrada y $0,60/M salida off-peak; razonamiento apagado por defecto (`RAG_DEEPSEEK_THINKING`). Solo la generación: los embeddings siguen locales |
 | Embeddings | [Qwen3-Embedding 0.6B](https://ollama.com/library/qwen3-embedding) vía Ollama | Multilingüe (100+ idiomas), mejor que bge-m3 en MTEB con la mitad de RAM (~0.6GB) |
 | Vector store | [Qdrant](https://qdrant.tech) | Filtros de payload + índice full-text → búsqueda híbrida |
 | Orquestación | [LangGraph](https://langchain-ai.github.io/langgraph/) | Grafo agéntico explícito con ciclos controlados |

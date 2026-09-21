@@ -60,3 +60,23 @@ class TestLaClaveNoSeFiltra:
         # El nombre del modelo de nube sí se publica; la clave jamás.
         health = client.get("/api/health")
         assert "sk-secreta-123" not in health.text
+
+
+class TestModeloDeepSeek:
+    def test_default_es_v41_flash_por_su_nombre_de_api(self):
+        assert _settings().deepseek_model == "deepseek-flash"
+
+    def test_razonamiento_apagado_por_defecto(self):
+        s = _settings(llm_provider="deepseek", deepseek_api_key="sk-x")
+        llm = build_llm(s)
+        assert llm.extra_body == {"thinking": {"type": "disabled"}}
+
+    def test_razonamiento_se_enciende_por_config(self):
+        s = _settings(llm_provider="deepseek", deepseek_api_key="sk-x", deepseek_thinking=True)
+        assert build_llm(s).extra_body == {"thinking": {"type": "enabled"}}
+
+    def test_json_mode_conserva_el_control_de_razonamiento(self):
+        s = _settings(llm_provider="deepseek", deepseek_api_key="sk-x")
+        llm = build_llm(s, json_mode=True)
+        assert llm.model_kwargs["response_format"] == {"type": "json_object"}
+        assert llm.extra_body == {"thinking": {"type": "disabled"}}
