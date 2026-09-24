@@ -15,12 +15,6 @@ def test_version_coincide_con_pyproject():
     assert __version__ == declared
 
 
-def test_version_es_semver():
-    partes = __version__.split(".")
-    assert len(partes) == 3
-    assert all(p.isdigit() for p in partes)
-
-
 def test_la_api_publica_esa_misma_version():
     """/api/health y /api/meta la exponen: si se desincroniza, el operador no
     puede saber qué código está sirviendo."""

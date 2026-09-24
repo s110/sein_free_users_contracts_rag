@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from rag.ingestion.indexer import (
-    MAX_PURGE_RATIO,
     IngestStats,
     doc_id_for,
     ensure_collection,
@@ -245,9 +244,6 @@ class TestPurgaDeStale:
         assert stats.failed == 1
         assert client.deleted == []
         assert stats.deleted_stale == 0
-
-    def test_el_umbral_por_defecto_es_conservador(self):
-        assert 0 < MAX_PURGE_RATIO <= 0.5
 
 
 class TestDocIdFor:

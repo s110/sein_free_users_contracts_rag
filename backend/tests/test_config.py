@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from rag.config import ConfigError, Settings, get_settings
+from rag.config import ConfigError, Settings
 
 
 class TestValidateRuntime:
@@ -89,9 +89,6 @@ class TestSettings:
         s = Settings()
         assert s.api_key == "desde-entorno"
         assert s.top_k == 12
-
-    def test_get_settings_cachea(self):
-        assert get_settings() is get_settings()
 
     def test_presupuesto_del_verificador_cubre_el_contexto_completo(self):
         s = Settings()

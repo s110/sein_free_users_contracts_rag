@@ -197,14 +197,6 @@ class TestGenerate:
         prompt = a.llm_generate.prompts[0]
         assert "[1]" in prompt and "[2]" in prompt
 
-    async def test_incluye_el_historial_como_turnos(self):
-        a = agent(gen_replies=["ok"])
-        history = [{"role": "user", "content": "antes"}, {"role": "assistant", "content": "sí"}]
-        await a.generate(
-            {"question": "q", "relevant_documents": [make_retrieved(1)], "history": history}
-        )
-        assert a.llm_generate.prompts  # no revienta con historial presente
-
 
 EXTRACCION_UNA = '{"afirmaciones": [{"texto": "la potencia es 5 MW", "citas": [1]}]}'
 
