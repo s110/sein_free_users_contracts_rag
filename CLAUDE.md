@@ -30,8 +30,12 @@ el CLI `sein-rag-ingest` real sobre un vault con frontmatter roto, tablas HTML
 sin cerrar y `.ocr/`; reingesta idempotente; `--force` sin dos generaciones;
 vault mutado (cambio de hash, borrado, documento vacío → exit 1); luego
 uvicorn + `/api/chat` SSE con la trampa Celepsa→Pluz, un seguimiento con
-historial, una adenda con filtros, la cifra nueva del contrato reindexado y
-una pregunta fuera de tema; al final los frenos de purga (vault vacío con
+historial, una adenda con filtros (pregunta corta que no nombra el contrato),
+la cifra nueva del contrato reindexado, el verificador fundamentando esas
+cuatro respuestas y rechazos fijos (fuera de tema, inyección, volcados
+masivos); luego una segunda API cuyo Ollama pasa por un proxy que falsea una
+cifra de la respuesta generada, y el verificador tiene que refutarla (puertos
+`E2E_API_PORT`+1 y +2); al final los frenos de purga (vault vacío con
 `--allow-purge`, purga masiva sin y con el flag).
 
 Artefactos en `artifacts/e2e/` (ignorado por git):
