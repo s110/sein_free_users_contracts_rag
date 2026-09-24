@@ -29,6 +29,14 @@ def main() -> int:
     parser.add_argument("--vault", type=Path, default=Path(settings.vault_dir))
     parser.add_argument("--force", action="store_true", help="Reindexa todo ignorando hashes")
     parser.add_argument(
+        "--reindexar-lista",
+        type=Path,
+        help=(
+            "Fichero con un doc_id por línea: reindexa solo esos, aunque su "
+            "source_hash no haya cambiado (el .md se editó, el PDF no)"
+        ),
+    )
+    parser.add_argument(
         "--allow-purge",
         action="store_true",
         help="Permite borrar del índice más de la mitad de los documentos",
@@ -38,6 +46,18 @@ def main() -> int:
     if not args.vault.is_dir():
         log.error("El vault no existe: %s", args.vault)
         return 2
+
+    force_docs: set[str] = set()
+    if args.reindexar_lista:
+        if not args.reindexar_lista.is_file():
+            log.error("La lista no existe: %s", args.reindexar_lista)
+            return 2
+        force_docs = {
+            linea.strip()
+            for linea in args.reindexar_lista.read_text(encoding="utf-8").splitlines()
+            if linea.strip()
+        }
+        log.info("Reindexado forzado de %d documentos de la lista", len(force_docs))
 
     client = QdrantClient(url=settings.qdrant_url, timeout=60)
     embedder = OllamaEmbedder(
@@ -55,6 +75,7 @@ def main() -> int:
             chunk_size=settings.chunk_size_chars,
             chunk_overlap=settings.chunk_overlap_chars,
             force=args.force,
+            force_docs=force_docs,
             max_purge_ratio=1.0 if args.allow_purge else MAX_PURGE_RATIO,
         )
     finally:

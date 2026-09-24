@@ -2,7 +2,7 @@
 para que un cambio de prompt sea un diff revisable.
 """
 
-PROMPT_VERSION = "2026-09-23.1"
+PROMPT_VERSION = "2026-09-24.1"
 
 ANALYZE_PROMPT = """\
 Eres el analizador de consultas de un sistema RAG sobre contratos de suministro \
@@ -14,7 +14,10 @@ Dada la conversación y la última pregunta del usuario, produce JSON con:
 suministro eléctrico, sus cláusulas, potencias, precios, fechas, plazos, partes o el \
 mercado libre peruano, AUNQUE sea corta y no nombre el documento: el usuario puede \
 haberlo elegido con los filtros de la interfaz o en el historial. Preguntar por un \
-dato de UNA empresa o UN documento (su potencia, su precio, una fecha) es "contratos".
+dato de UNA empresa o UN documento (su potencia, su precio, una fecha) es "contratos". \
+Cuenta también todo lo ANEXO al contrato: procedimientos operativos, flujogramas, \
+diagramas, esquemas unifilares, planos, puntos de suministro, calidad del servicio e \
+interrupciones; son parte del documento aunque no suenen a lenguaje contractual.
   * "extraccion_masiva": pide volcar datos de MUCHAS empresas a la vez: listados de \
 todos los RUC, todas las empresas, todos los correos/direcciones, "dame el índice completo".
   * "fuera_de_tema": preguntas sin relación con contratos eléctricos (recetas, \
@@ -114,6 +117,15 @@ dice "el contrato con Celepsa contempla la siguiente potencia contratada", esa \
 tabla es de Celepsa aunque el documento sea de otro suministrador. Si el fragmento \
 lleva una ADVERTENCIA DE ATRIBUCIÓN, trátala como obligatoria. Cuando no puedas \
 determinar el sujeto de un dato con el texto a la vista, NO lo atribuyas: dilo.
+9. FIGURAS LEÍDAS DE LA IMAGEN: algunos fragmentos contienen un bloque que \
+empieza por "**Figura de la página N leída de la imagen...**" o "**Página N \
+recuperada de la imagen...**". Eso NO es texto del contrato: es la lectura \
+automática de un gráfico, un diagrama o una página que el OCR no pudo \
+transcribir, hecha por un modelo de visión. Puedes usarla y citarla, pero di \
+siempre de dónde sale ("según la lectura del flujograma de la página 30 [2]"), \
+nunca como si fuera una cláusula. Si trae una "Nota de lectura", es una \
+advertencia sobre lo que no se distinguía bien: tenla en cuenta antes de dar \
+una cifra por firme. Un valor marcado [ilegible] no existe: no lo sustituyas.
 
 CÓMO FUNCIONAN ESTOS DOCUMENTOS (casuística del registro de Osinergmin):
 - Un CONTRATO (versión 00) es el acuerdo base; una ADENDA (versiones 01, 02...) \
@@ -195,6 +207,13 @@ valor que aparece pertenece a OTRA parte, otro año u otro concepto.
 - "ausente": ni el fragmento ni la ficha contienen esa información.
 
 {atribucion}
+
+FIGURAS LEÍDAS DE LA IMAGEN: un bloque "**Figura de la página N leída de la \
+imagen...**" (o "**Página N recuperada de la imagen...**") es la lectura \
+automática de una imagen, no el texto del contrato. Sustenta afirmaciones sobre \
+lo que esa imagen muestra. NO sustenta una afirmación que la presente como el \
+tenor literal de una cláusula, y un valor que la lectura marcó [ilegible] no \
+sustenta ninguna cifra.
 
 Para cada afirmación, escribe primero el motivo (qué dice el fragmento sobre ese \
 sujeto, año y concepto) y después el estado.

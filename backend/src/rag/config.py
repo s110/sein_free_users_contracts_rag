@@ -43,11 +43,19 @@ class Settings(BaseSettings):
     # en /api/meta, /api/health ni en mensajes de error.
     llm_provider: str = "ollama"
     deepseek_api_key: SecretStr = SecretStr("")
-    # Vision Exp y no el Flash de texto: mismo precio publicado, y los
-    # contratos traen diagramas de carga y mapas que en el futuro entrarán
-    # como imagen. Para solo-texto se comporta igual.
-    deepseek_model: str = "deepseek-v4-flash-vision-exp"
+    # `deepseek-flash` es el nombre de API que sirve DeepSeek-V4.1-Flash
+    # (sep 2026). Los nombres anteriores (`deepseek-v4-flash`,
+    # `deepseek-v4-flash-vision-exp`) siguen aceptados pero sus modelos se
+    # retiraron y la API los enruta a este mismo; se pone el nombre real
+    # para que /api/meta no publique un modelo que ya no existe.
+    deepseek_model: str = "deepseek-flash"
     deepseek_base_url: str = "https://api.deepseek.com/v1"
+    # V4.1 Flash razona por defecto (thinking mode, esfuerzo alto). Apagado
+    # aquí por la misma razón que `reasoning=False` en Ollama: cuatro de los
+    # ocho nodos del grafo llaman al LLM y tres piden JSON estricto; el
+    # razonamiento multiplica latencia y tokens de salida sin cambiar el
+    # veredicto. Ponlo en true para comparar calidad en el eval.
+    deepseek_thinking: bool = False
     llm_temperature: float = 0.1
     llm_num_ctx: int = 8192
 

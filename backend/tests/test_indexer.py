@@ -195,6 +195,44 @@ class TestIngest:
         assert stats.skipped == 0
 
 
+class TestReindexadoPorLista:
+    """`source_hash` es el hash del PDF, no del markdown.
+
+    El enriquecimiento de figuras reescribe el .md dejando el PDF intacto, así
+    que el hash no cambia y el documento se saltaría para siempre. `force_docs`
+    reindexa esa lista concreta sin obligar a reprocesar los 7.767 contratos.
+    """
+
+    def test_reindexa_el_documento_de_la_lista_con_el_hash_igual(self, vault):
+        write_doc(vault, "a", h="hash1")
+        client = FakeQdrant({"a": "hash1"})
+        stats = run(vault, client, force_docs={"a"})
+        assert stats.indexed == 1
+        assert stats.skipped == 0
+        assert "a" in client.deleted  # los chunks previos se purgan antes
+
+    def test_no_toca_los_documentos_fuera_de_la_lista(self, vault):
+        write_doc(vault, "a", h="hash1")
+        write_doc(vault, "b", h="hash1")
+        client = FakeQdrant({"a": "hash1", "b": "hash1"})
+        stats = run(vault, client, force_docs={"a"})
+        assert stats.indexed == 1
+        assert stats.skipped == 1
+        assert client.deleted == ["a"]
+
+    def test_una_lista_vacia_se_comporta_como_la_ingesta_normal(self, vault):
+        write_doc(vault, "a", h="hash1")
+        client = FakeQdrant({"a": "hash1"})
+        assert run(vault, client, force_docs=set()).skipped == 1
+
+    def test_un_doc_id_inexistente_en_la_lista_no_rompe_nada(self, vault):
+        write_doc(vault, "a", h="hash1")
+        client = FakeQdrant({"a": "hash1"})
+        stats = run(vault, client, force_docs={"no-existe"})
+        assert stats.skipped == 1
+        assert stats.failed == 0
+
+
 class TestPurgaDeStale:
     def test_purga_un_documento_borrado_del_vault(self, vault):
         write_doc(vault, "a")

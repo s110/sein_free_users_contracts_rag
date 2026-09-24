@@ -27,6 +27,14 @@ _PAGE_HEADER_RE = re.compile(r"^#{1,6}\s*P[áa]gina\s+(\d+)\s*$", re.IGNORECASE)
 _HEADER_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 # El OCR emite las tablas como HTML; las de otras fuentes vienen en pipes.
 _TABLE_START_RE = re.compile(r"^\s*(?:<table\b|\|)", re.IGNORECASE)
+# Bloques de lectura automática de imagen insertados por el enriquecimiento de
+# figuras. La cabecera es lo único que distingue una lectura de máquina del
+# articulado del contrato, así que ningún fragmento puede quedarse sin ella.
+_FIG_INICIO_RE = re.compile(
+    r"^\*\*(?:Figura de la página \d+ leída|Página \d+ recuperada) de la imagen[^\n]*",
+    re.MULTILINE,
+)
+_FIG_FIN = "*(fin de la lectura automática de la imagen)*"
 
 
 def _is_table(text: str) -> bool:
@@ -137,6 +145,42 @@ def ensure_tables_have_context(chunks: list[dict], overlap: int) -> None:
             chunks[i]["text"] = f"…{tail}\n\n{chunks[i]['text']}"
 
 
+def ensure_figuras_have_provenance(chunks: list[dict]) -> None:
+    """Invariante final: ningún fragmento contiene lectura de máquina sin decirlo.
+
+    El bloque de una figura puede ser más largo que un chunk. Cuando se parte,
+    la cabecera se queda en el primero y el resto del texto —leído por un
+    modelo de visión, no transcrito del contrato— viaja indistinguible del
+    articulado. Es exactamente el fallo que hizo pasar una tabla de Celepsa por
+    potencia contratada de Pluz, en otro sitio: el generador lo presentaría
+    como cláusula y el verificador adversario lo daría por bueno.
+
+    Cada fragmento que continúa un bloque recibe la cabecera de su bloque.
+    """
+    activa: str | None = None
+    ultima: str | None = None
+    for c in chunks:
+        texto = c["text"]
+        # "empieza por **" no servía: el contenido de una figura puede abrir con
+        # una línea en negrita propia y entonces el fragmento se quedaba sin
+        # cabecera. Lo que decide es si abre con una cabecera de bloque real.
+        abre_bloque = bool(_FIG_INICIO_RE.match(texto.lstrip()))
+        # Dos casos necesitan cabecera: el fragmento que continúa un bloque
+        # abierto, y el que arrastra el cierre del bloque por el solapamiento
+        # —el empaquetador repite la cola del fragmento anterior, así que el
+        # cierre puede reaparecer cuando el bloque ya se dio por cerrado.
+        continua = activa is not None or (_FIG_FIN in texto and ultima is not None)
+        if continua and not abre_bloque and ultima:
+            c["text"] = texto = f"{ultima} (continuación)\n\n{texto}"
+        cabeceras = _FIG_INICIO_RE.findall(texto)
+        if cabeceras:
+            ultima = cabeceras[-1].replace(" (continuación)", "")
+            resto = texto[texto.rfind(cabeceras[-1]) + len(cabeceras[-1]) :]
+            activa = None if _FIG_FIN in resto else ultima
+        elif activa and _FIG_FIN in texto:
+            activa = None
+
+
 def _hard_split(text: str, max_chars: int, overlap: int) -> list[str]:
     step = max(max_chars - overlap, 1)
     return [
@@ -208,6 +252,7 @@ def chunk_document(
     close_paragraph()
     packer.flush()
     ensure_tables_have_context(packer.chunks, overlap_chars)
+    ensure_figuras_have_provenance(packer.chunks)
 
     return [
         Chunk(

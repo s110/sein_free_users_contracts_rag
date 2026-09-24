@@ -32,6 +32,11 @@ def build_llm(
             temperature=temp,
             timeout=settings.request_timeout,
             model_kwargs=({"response_format": {"type": "json_object"}} if json_mode else {}),
+            # Parámetro propio de DeepSeek (no está en el esquema de OpenAI):
+            # viaja en el cuerpo tal cual. Sin él, V4.1 Flash razona siempre.
+            extra_body={
+                "thinking": {"type": "enabled" if settings.deepseek_thinking else "disabled"}
+            },
         )
     return ChatOllama(
         base_url=settings.ollama_host,
