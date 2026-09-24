@@ -206,9 +206,13 @@ class TestPurgaDeStale:
     def test_un_vault_vacio_no_borra_el_indice(self, vault):
         """El caso que vaciaba la colección: compose crea ./data/vault vacío,
         así que `--vault` pasaba la validación, `iter_vault` devolvía [] y el
-        bucle purgaba todo reportando éxito."""
+        bucle purgaba todo reportando éxito.
+
+        Se corre con `--allow-purge` (ratio 1.0) a propósito: con el umbral por
+        defecto el freno de proporción ya aborta la purga y este test pasaba
+        aunque se borrara el freno de vault vacío."""
         client = FakeQdrant({"a": "h", "b": "h", "c": "h"})
-        stats = run(vault, client)
+        stats = run(vault, client, max_purge_ratio=1.0)
         assert client.deleted == []
         assert stats.deleted_stale == 0
         assert stats.purge_skipped == 3

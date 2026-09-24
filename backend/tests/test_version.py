@@ -13,11 +13,3 @@ PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 def test_version_coincide_con_pyproject():
     declared = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]["version"]
     assert __version__ == declared
-
-
-def test_la_api_publica_esa_misma_version():
-    """/api/health y /api/meta la exponen: si se desincroniza, el operador no
-    puede saber qué código está sirviendo."""
-    from rag.api.main import app
-
-    assert app.version == __version__

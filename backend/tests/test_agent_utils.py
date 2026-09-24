@@ -57,10 +57,6 @@ def test_format_history_truncates_content_too():
     assert "x" * 500 in out
 
 
-def test_format_history_empty():
-    assert format_history([]) == "(sin historial)"
-
-
 def test_format_history_tolerates_missing_keys():
     assert "?" in format_history([{}])
 

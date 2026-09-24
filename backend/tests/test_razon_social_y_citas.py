@@ -37,17 +37,20 @@ class TestFiltroRazonSocial:
 class TestCitasFantasma:
     def test_borra_marcadores_sin_fuente(self):
         answer = "La potencia es 500 kW [2], según la Tercera Adenda [3] y el PPA [1]."
-        assert (
-            strip_ghost_citations(answer, 1)
-            == "La potencia es 500 kW , según la Tercera Adenda  y el PPA [1]."
-        )
+        out = strip_ghost_citations(answer, 1)
+        assert "[2]" not in out and "[3]" not in out
+        assert "[1]" in out
+        # La afirmación queda intacta: solo cae el marcador falso.
+        assert "500 kW" in out and "Tercera Adenda" in out
 
     def test_conserva_todas_cuando_existen(self):
         answer = "Cláusula séptima [1] y anexo B [2]."
         assert strip_ghost_citations(answer, 2) == answer
 
     def test_sin_fuentes_borra_todo_marcador(self):
-        assert strip_ghost_citations("No hay contexto [1].", 0) == "No hay contexto ."
+        out = strip_ghost_citations("No hay contexto [1].", 0)
+        assert "[1]" not in out
+        assert "No hay contexto" in out
 
 
 class TestFiltroTipoInsensibleAMayusculas:

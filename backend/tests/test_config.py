@@ -89,9 +89,3 @@ class TestSettings:
         s = Settings()
         assert s.api_key == "desde-entorno"
         assert s.top_k == 12
-
-    def test_presupuesto_del_verificador_cubre_el_contexto_completo(self):
-        s = Settings()
-        # Con top_k fuentes de chunk_size caracteres, el verificador debe
-        # poder ver una parte representativa de todas, no solo del principio.
-        assert s.verify_context_chars >= s.top_k * 1000

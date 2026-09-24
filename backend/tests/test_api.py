@@ -193,8 +193,11 @@ class TestCors:
             r = c.get("/x", headers={"Origin": "https://malicioso.example"})
             assert "access-control-allow-origin" not in r.headers
 
-    def test_sin_origenes_no_se_instala_middleware(self):
-        assert self._app_con_cors("").user_middleware == []
+    def test_sin_origenes_ningun_origen_recibe_la_cabecera(self):
+        with TestClient(self._app_con_cors("")) as c:
+            r = c.get("/x", headers={"Origin": "https://panel.example"})
+            assert r.status_code == 200
+            assert "access-control-allow-origin" not in r.headers
 
 
 class TestHealth:
