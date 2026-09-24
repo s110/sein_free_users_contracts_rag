@@ -1,8 +1,8 @@
-.PHONY: help setup models lint test cov audit ci typecheck up down ingest ingest-force \
+.PHONY: help setup models lint test e2e cov audit ci typecheck up down ingest ingest-force \
         logs eval dev-backend dev-frontend
 
 help:
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-z0-9-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Instala deps de backend (uv) y frontend (npm)
 	cd backend && uv sync --locked --group dev
@@ -13,12 +13,15 @@ models: ## Descarga los modelos locales en Ollama
 	ollama pull qwen3-embedding:0.6b
 
 lint: ## Ruff (backend) + ESLint y typecheck (frontend)
-	cd backend && uv run ruff check src tests eval && uv run ruff format --check src tests eval
+	cd backend && uv run ruff check src tests eval e2e && uv run ruff format --check src tests eval e2e
 	cd frontend && npm run lint && npm run typecheck
 
 test: ## Tests de backend y frontend (no requieren servicios)
 	cd backend && uv run pytest
 	cd frontend && npm run test
+
+e2e: ## E2E real: vault → ingesta → Qdrant efímero → API → agente (Docker + Ollama)
+	cd backend && uv run python e2e/run_e2e.py
 
 cov: ## Cobertura de ambos lados
 	cd backend && uv run pytest --cov-report=html

@@ -1,0 +1,18 @@
+# Qdrant efímero para el E2E. Proyecto y puerto propios para no chocar con el
+# stack de producción (`sein-rag`, 127.0.0.1:6333) que corre en el mismo host.
+#
+#   docker compose -p e2e-sein_free_users_contracts_rag -f e2e/docker-compose.yml up -d --wait
+#
+# Sin volumen: el almacenamiento vive y muere con el contenedor.
+
+services:
+  qdrant:
+    # Misma imagen (y digest) que docker-compose.yml de la raíz.
+    image: qdrant/qdrant:v1.18.3@sha256:0bd98fa7977f1e75694779359ca4e212822e5a71334e28421182f72f209d5286
+    ports:
+      - "127.0.0.1:${E2E_QDRANT_PORT:-16333}:6333"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

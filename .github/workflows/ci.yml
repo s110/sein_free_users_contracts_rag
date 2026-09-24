@@ -43,8 +43,8 @@ jobs:
         run: uv sync --locked --group dev
       - name: Lint
         run: |
-          uv run ruff check src tests eval
-          uv run ruff format --check src tests eval
+          uv run ruff check src tests eval e2e
+          uv run ruff format --check src tests eval e2e
       - name: Tests + cobertura
         run: uv run pytest --cov-report=xml
       - name: Publicar cobertura al fallar

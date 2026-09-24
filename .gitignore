@@ -222,6 +222,8 @@ node_modules/
 frontend/dist/
 data/vault/
 backend/eval/results/
+# Salida del E2E (make e2e): se regenera, no se versiona
+artifacts/
 .DS_Store
 
 # Cobertura y auditoría
