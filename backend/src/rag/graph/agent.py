@@ -26,7 +26,7 @@ from langgraph.graph import END, StateGraph
 from ..config import Settings
 from ..llm import build_llm
 from ..retrieval.store import HybridStore
-from ..schemas import RetrievedChunk
+from ..schemas import RetrievedChunk, normalize_text_filter
 from ..textnorm import find_third_parties, html_tables_to_markdown
 from . import prompts
 from .state import AgentState
@@ -40,6 +40,51 @@ MAX_HISTORY_MESSAGES = 8
 MAX_CLAIMS = 25
 # Un chunk son ~3200 caracteres; este techo solo protege de un chunk anómalo.
 VERIFY_FRAGMENT_CHARS = 6000
+
+
+# Cinturón léxico sobre el alcance que decide el modelo (texto ya en
+# minúsculas y sin tildes). Solo CORRIGE falsos positivos del bloqueo; nunca
+# bloquea por su cuenta: el primer filtro sigue siendo el modelo.
+#
+# Vocabulario propio de un contrato de suministro. "energía" o "electricidad"
+# sueltas no bastan: "un poema sobre la energía solar" debe seguir fuera.
+_DOMAIN_RE = re.compile(
+    r"\b(?:contrat\w*|adendas?|suministr\w*|clausulas?|usuarios? libres?|osinergmin|sein"
+    r"|potencia contratada|precios? de (?:la )?(?:energia|potencia)|peajes?|pliego tarifario"
+    r"|horas? (?:fuera )?de punta|punto de suministro|mwh?|kwh?|kw-mes|ruc \d{11}|\d{11})\b"
+)
+# Señales de que la pregunta intenta cambiar las reglas: con ellas el
+# vocabulario del dominio no reabre nada.
+_INJECTION_RE = re.compile(
+    r"\b(?:ignora\w*|olvida\w*|actua como|finge\w*|haz de cuenta|eres ahora|a partir de ahora"
+    r"|instrucciones|system prompt|prompt del sistema|jailbreak|modo desarrollador)\b"
+)
+# Un volcado masivo habla de poblaciones: todos/cada/listado, o datos de
+# muchas empresas a la vez. Sin nada de esto no hay volcado que frenar.
+_BULK_RE = re.compile(
+    r"\b(?:tod[oa]s|listado|listar?|listame|enumera\w*|volca\w*|vuelca|export\w*|csv|excel"
+    r"|descarga\w*|indice completo|base de datos|masiv\w*"
+    r"|cada (?:empresa|usuario|cliente|ruc|suministrador)"
+    r"|empresas|usuarios libres|clientes|rucs|correos|e-?mails|direcciones|domicilios"
+    r"|telefonos|datos de contacto)\b"
+)
+
+
+def scope_belt(scope: str, question: str) -> str:
+    """Corrige los falsos positivos del guardrail de alcance.
+
+    qwen3.5:4b a temperatura 0 rechazaba "¿Cuál es el nuevo precio de la
+    energía y desde qué fecha rige?" (con el filtro de la adenda puesto) como
+    fuera de tema, y "¿Qué potencia tiene contratada MINERA CORONA S.A. para
+    el año 2026?" como extracción masiva: preguntas por UN dato de UN
+    documento, cortadas antes de llegar al índice.
+    """
+    q = normalize_text_filter(question)
+    if scope == "fuera_de_tema" and _DOMAIN_RE.search(q) and not _INJECTION_RE.search(q):
+        return "contratos"
+    if scope == "extraccion_masiva" and not _BULK_RE.search(q):
+        return "contratos"
+    return scope
 
 
 def parse_json_reply(text: str) -> dict:
@@ -91,6 +136,35 @@ def describe_chunk(d: RetrievedChunk) -> str:
     if d.fecha_suscripcion:
         desc += f", suscrito el {d.fecha_suscripcion}"
     return desc
+
+
+def party_sheet(d: RetrievedChunk) -> str:
+    """Ficha de partes del documento para el refutador.
+
+    Un chunk de la cláusula de potencia dice "la potencia contratada con el
+    Suministrador" sin el preámbulo que define quién es: ese preámbulo quedó
+    en otro chunk. Sin la ficha, el refutador comparaba "Pluz" contra "el
+    Suministrador", los leía como sujetos distintos y refutaba respuestas
+    correctas ("la tabla atribuye la cifra a Pluz, no al Suministrador").
+    """
+    lines = [f"- Tipo de documento: {d.tipo or 'desconocido'}"]
+    if d.suministrador:
+        lines.append(f"- Suministrador (vende la energía): {d.suministrador}")
+    if d.usuario_libre:
+        ruc = f" (RUC {d.ruc_usuario_libre})" if d.ruc_usuario_libre else ""
+        lines.append(f"- Cliente / Usuario Libre (compra la energía): {d.usuario_libre}{ruc}")
+    if d.fecha_suscripcion:
+        lines.append(f"- Fecha de suscripción: {d.fecha_suscripcion}")
+    return "\n".join(lines)
+
+
+def refute_attribution_rule(d: RetrievedChunk) -> str:
+    """Regla de atribución para el refutador: fuerte si el fragmento nombra
+    terceros, y la lectura por defecto (las cifras son de las partes) si no."""
+    terceros = find_third_parties(d.text, [d.suministrador, d.usuario_libre])
+    if terceros:
+        return prompts.REFUTE_ATTRIBUTION_THIRD_PARTIES.format(terceros="; ".join(terceros))
+    return prompts.REFUTE_ATTRIBUTION_OWN
 
 
 def attribution_warning(d: RetrievedChunk) -> str:
@@ -166,6 +240,14 @@ def format_history(history: list[dict]) -> str:
     return "\n".join(f"{m.get('role', '?')}: {m.get('content', '')[:500]}" for m in recent)
 
 
+def format_user_filters(filters: dict | None) -> str:
+    """Filtros de la UI para el analizador: sin ellos, "¿desde qué fecha rige?"
+    con la adenda elegida en la interfaz parecía una pregunta sin objeto."""
+    if not filters:
+        return "(ninguno)"
+    return ", ".join(f"{k}={v}" for k, v in filters.items())
+
+
 class ContractsAgent:
     def __init__(
         self,
@@ -196,6 +278,7 @@ class ContractsAgent:
                 HumanMessage(
                     content=prompts.ANALYZE_PROMPT.format(
                         history=format_history(state.get("history", [])),
+                        user_filters=format_user_filters(state.get("user_filters")),
                         question=question,
                     )
                 )
@@ -205,6 +288,7 @@ class ContractsAgent:
         scope = str(data.get("alcance") or "contratos")
         if scope not in ("contratos", "fuera_de_tema", "extraccion_masiva"):
             scope = "contratos"
+        scope = scope_belt(scope, question)
         search_query = str(data.get("search_query") or "").strip() or question
         extracted = data.get("filters") if isinstance(data.get("filters"), dict) else {}
         filters = {k: v for k, v in extracted.items() if v}
@@ -452,7 +536,8 @@ class ContractsAgent:
                 HumanMessage(
                     content=prompts.REFUTE_PROMPT.format(
                         n=n,
-                        desc=describe_chunk(doc),
+                        ficha=party_sheet(doc),
+                        atribucion=refute_attribution_rule(doc),
                         fragment=html_tables_to_markdown(doc.text)[:VERIFY_FRAGMENT_CHARS],
                         claims=listado,
                     )
@@ -497,6 +582,17 @@ class ContractsAgent:
             return empty
         if not claims:
             return empty
+        # Con una sola fuente citada en toda la respuesta, una afirmación sin
+        # [n] propio solo puede apoyarse en esa fuente: el extractor perdía la
+        # cita de párrafo ("... rige desde el 1 de febrero. La adenda ... [1].")
+        # y la respuesta correcta quedaba "no concluyente". La afirmación
+        # sigue pasando por el refutador: se le asigna la prueba, no el veredicto.
+        cited = {int(m) for m in _CITATION_MARKER_RE.findall(answer) if 1 <= int(m) <= len(docs)}
+        if len(cited) == 1:
+            only = next(iter(cited))
+            for c in claims:
+                if not c["citas"]:
+                    c["citas"] = [only]
 
         por_fragmento: dict[int, list[tuple[int, dict]]] = {}
         for idx, c in enumerate(claims):
@@ -507,6 +603,31 @@ class ContractsAgent:
         if por_fragmento:
             resultados = await asyncio.gather(
                 *(self._refute(n, docs[n - 1], grupo) for n, grupo in por_fragmento.items()),
+                return_exceptions=True,
+            )
+            for r in resultados:
+                if isinstance(r, BaseException):
+                    log.warning("verify: refutación de un fragmento falló: %s", r)
+                    continue
+                for claim_idx, verdict in r.items():
+                    veredictos.setdefault(claim_idx, []).append(verdict)
+
+        # Segunda ronda para lo que quedó sin respaldo NI refutación: el
+        # extractor a veces cruza los marcadores (la potencia de 2027 citada
+        # [2] en la respuesta le llegaba con [1], la cláusula de antecedentes)
+        # y el refutador, mirando el fragmento equivocado, decía "ausente".
+        # Se prueba con las OTRAS fuentes que la respuesta cita, una por
+        # llamada como en la primera ronda; lo refutado no se reabre.
+        segunda: dict[int, list[tuple[int, dict]]] = {}
+        for idx, c in enumerate(claims):
+            estados = {e for e, _ in veredictos.get(idx, [])}
+            if not c["citas"] or estados & {"sustentada", "refutada"}:
+                continue
+            for n in sorted(cited - set(c["citas"])):
+                segunda.setdefault(n, []).append((idx, c))
+        if segunda:
+            resultados = await asyncio.gather(
+                *(self._refute(n, docs[n - 1], grupo) for n, grupo in segunda.items()),
                 return_exceptions=True,
             )
             for r in resultados:
