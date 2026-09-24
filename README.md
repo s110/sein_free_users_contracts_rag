@@ -127,6 +127,7 @@ mano. Sin `RAG_API_KEY` no hay clave con la que exigir nada.
 make setup          # uv sync + npm install
 make lint           # ruff + tsc
 make test           # pytest (sin servicios: unit tests puros)
+make e2e            # E2E real con Qdrant efímero + Ollama (ver CLAUDE.md)
 make dev-backend    # uvicorn --reload en :8000
 make dev-frontend   # vite en :5173 (proxy /api → :8000)
 make eval           # evaluación contra golden set (stack vivo)
