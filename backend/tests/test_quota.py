@@ -105,7 +105,8 @@ class TestPublicChat:
         )
         assert r.status_code == 429
         assert "límite" in r.json()["detail"]
-        assert r.headers["retry-after"] == "86400"
+        # Hasta la medianoche UTC que anuncia el mensaje, no 24 h fijas.
+        assert 1 <= int(r.headers["retry-after"]) <= 86400
 
     def test_api_key_valida_salta_la_cuota(self, public_settings):
         client = build_public(public_settings)

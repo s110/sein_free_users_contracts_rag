@@ -33,7 +33,7 @@ from ..logging_setup import setup_logging
 from ..retrieval.store import HybridStore
 from ..schemas import ChatRequest, RetrievedChunk, SourceRef
 from ..textnorm import html_tables_to_markdown
-from .quota import DailyQuota
+from .quota import DailyQuota, seconds_until_utc_midnight
 
 log = logging.getLogger("rag.api")
 
@@ -189,17 +189,28 @@ async def chat_access(request: Request) -> None:
     (el modo histórico). La cuota vive en el backend y no en nginx porque
     nginx solo sabe limitar ráfagas por minuto; el costo real es el total de
     preguntas del día contra un LLM que atiende en serie.
+
+    Aquí solo se decide QUIÉN paga: el intento se consume en `consume_quota`,
+    dentro del handler. Como dependencia corría antes de validar el cuerpo, y
+    una petición mal formada (422) gastaba un intento.
     """
     settings: Settings = request.app.state.settings
+    request.state.quota_ip = None  # ilimitado
     if _has_valid_api_key(request):
-        request.state.quota_remaining = None  # ilimitado
         return
     if not settings.public_chat:
         await require_api_key(request)
-        request.state.quota_remaining = None
         return
+    request.state.quota_ip = _client_ip(request)
+
+
+async def consume_quota(request: Request) -> int | None:
+    """Consume un intento de la IP que fijó `chat_access`. None = ilimitado."""
+    ip = getattr(request.state, "quota_ip", None)
+    if ip is None:
+        return None
+    settings: Settings = request.app.state.settings
     quota: DailyQuota = request.app.state.quota
-    ip = _client_ip(request)
     allowed, remaining = await asyncio.to_thread(quota.hit, ip)
     if not allowed:
         raise HTTPException(
@@ -208,9 +219,9 @@ async def chat_access(request: Request) -> None:
                 f"Alcanzaste el límite de {settings.chat_daily_limit} preguntas "
                 "por día. La cuota se renueva a las 00:00 UTC."
             ),
-            headers={"Retry-After": "86400"},
+            headers={"Retry-After": str(seconds_until_utc_midnight())},
         )
-    request.state.quota_remaining = remaining
+    return remaining
 
 
 def _sse(event_type: str, data: dict) -> str:
@@ -327,6 +338,7 @@ async def meta(request: Request):
 @app.post("/api/chat", dependencies=[Depends(chat_access)])
 async def chat(request: Request, body: ChatRequest):
     agent: ContractsAgent = request.app.state.agent
+    remaining = await consume_quota(request)
 
     async def event_stream():
         state_in = {
@@ -381,13 +393,18 @@ async def chat(request: Request, body: ChatRequest):
         except Exception:  # noqa: BLE001
             ref = uuid.uuid4().hex[:12]
             log.exception("Error en /api/chat (ref=%s)", ref)
+            # El fallo es del servidor: el intento se devuelve. Un corte del
+            # cliente o "Detener" no llegan aquí y siguen contando, o cada
+            # pregunta abandonada a medias saldría gratis.
+            ip = getattr(request.state, "quota_ip", None)
+            if ip is not None:
+                await asyncio.to_thread(request.app.state.quota.refund, ip)
             yield _sse(
                 "error",
                 {"message": f"Error interno del agente. Referencia para soporte: {ref}"},
             )
 
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    remaining = getattr(request.state, "quota_remaining", None)
     if remaining is not None:
         # El frontend muestra cuántas preguntas quedan hoy sin otra llamada.
         headers["X-Quota-Remaining"] = str(remaining)

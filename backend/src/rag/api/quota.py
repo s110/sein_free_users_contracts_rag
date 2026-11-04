@@ -25,6 +25,13 @@ log = logging.getLogger("rag.quota")
 _PRUNE_KEEP_DAYS = 7
 
 
+def seconds_until_utc_midnight(now: dt.datetime | None = None) -> int:
+    """Segundos hasta las 00:00 UTC, cuando la cuota se renueva (`Retry-After`)."""
+    now = now or dt.datetime.now(dt.UTC)
+    manana = dt.datetime.combine(now.date() + dt.timedelta(days=1), dt.time(), dt.UTC)
+    return max(1, int((manana - now).total_seconds()))
+
+
 class DailyQuota:
     """`hit(ip)` incrementa y responde si la IP aún tiene cuota hoy.
 
@@ -84,6 +91,15 @@ class DailyQuota:
                 return False, 0
             self._conn.commit()
             return True, self.daily_limit - count
+
+    def refund(self, ip: str) -> None:
+        """Devuelve un intento consumido hoy por `ip` (fallo del servidor)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE quota SET count = count - 1 WHERE ip = ? AND day = ? AND count > 0",
+                (ip, self._today()),
+            )
+            self._conn.commit()
 
     def remaining(self, ip: str) -> int:
         """Cuota restante de `ip` hoy, sin consumir."""

@@ -238,6 +238,9 @@ export default function App() {
           <button
             onClick={() => {
               setApiKey(apiKeyInput);
+              // Con clave el backend no manda X-Quota-Remaining: el último
+              // valor anónimo dejaba visible "Agotaste tus preguntas de hoy".
+              setQuotaRemaining(null);
               setShowSettings(false);
             }}
           >
