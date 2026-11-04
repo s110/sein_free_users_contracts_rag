@@ -34,6 +34,8 @@ export interface ChatMessage {
   status?: string; // paso actual del agente mientras genera
   streaming?: boolean;
   error?: string;
+  /** El usuario pulsó Detener: la respuesta quedó incompleta. */
+  stopped?: boolean;
 }
 
 export interface Filters {

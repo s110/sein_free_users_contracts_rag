@@ -39,8 +39,13 @@ export function Message({ message, onCite, onShowSources }: Props) {
           ⚠ {message.error}
         </div>
       )}
-      {!message.streaming && !message.error && message.content && (
+      {!message.streaming && !message.error && (message.content || message.stopped) && (
         <div className="msg-footer">
+          {message.stopped && (
+            <span className="badge badge-muted" title="Pulsaste Detener antes de que terminara">
+              Respuesta detenida: incompleta y sin verificar
+            </span>
+          )}
           {message.grounded === true && total > 0 && (
             <span
               className="badge badge-ok"
