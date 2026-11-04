@@ -18,6 +18,11 @@ ficheros de "hechos", marcadores de texto, bucles con variables de modo y
 recursos que dos procesos leen y escriben. Comprobé cada referencia
 `ruta:línea` contra el código. No ejecuté nada.
 
+**Estado tras los arreglos.** Una segunda pasada arregló parte de los
+riesgos. Cada riesgo arreglado lleva la marca **Arreglado** con su commit. Las
+referencias `ruta:línea` describen el código después de esos commits. Los
+riesgos sin marca siguen abiertos; la sección final explica por qué.
+
 **Convención de riesgos.**
 
 - *verificado*: el comportamiento se deduce de leer el código.
@@ -30,20 +35,20 @@ Las secciones van de mayor a menor importancia.
 
 | # | Máquina | Codificación del estado | Archivo principal | Riesgo principal |
 |---|---|---|---|---|
-| 1 | Ciclo de vida de un documento en el índice | `source_hash` del payload contra el `.md`, más flags de la corrida | `backend/src/rag/ingestion/indexer.py` | Documento vacío que queda en el índice con su versión vieja para siempre |
-| 2 | Versión de un documento entre Khipu, Mac e índice | Contenido del `.md`, sello del frontmatter, listas `.txt` por oleada | `tools/figuras/aplicar_oleada.sh`, `fusionar_figuras.py` | El índice no sabe qué versión del `.md` tiene y los fallos de reindexado se ocultan |
-| 3 | Bucle agéntico y resultado de la respuesta | `TypedDict` parcial: `scope`, `no_context`, `grounded`, `claims_total` | `backend/src/rag/graph/agent.py` | `no_context` sale con `grounded: true` e infla la métrica del eval |
-| 4 | Veredicto por afirmación del verificador | Listas de `(estado, motivo)` por afirmación en dos rondas | `backend/src/rag/graph/agent.py` | Tope de 25 afirmaciones con insignia verde sobre el total |
-| 5 | Protocolo SSE de `/api/chat` | Orden de eventos de LangGraph, flag `sources_sent`, dict `final` | `backend/src/rag/api/main.py` | La cuota se consume antes del stream; `final` duplica el estado del grafo |
-| 6 | Mensaje del asistente en el frontend | Campos opcionales de `ChatMessage` | `frontend/src/App.tsx` | Una respuesta detenida se ve como completa y entra al historial |
-| 7 | Cadena SLURM de lectura y verificación | Filas sin `error` en dos JSONL, sucesor en la cola | `tools/figuras/figuras_job.slurm` | Sin estado terminal: una página que falla siempre encadena jobs sin fin |
-| 8 | Estado de una página en el pipeline de figuras | Presencia de `.jpg`, filas JSONL, cabecera en el `.md` | `tools/figuras/prep_figuras.py`, `extraer_figuras.py` | Rehacer el worklist pierde rescates y páginas ya sin marcador |
+| 1 | Ciclo de vida de un documento en el índice | `source_hash` del payload contra el `.md`, más flags de la corrida | `backend/src/rag/ingestion/indexer.py` | Renombrado masivo: la purga retenida deja dos copias de cada contrato (el documento vaciado está arreglado) |
+| 2 | Versión de un documento entre Khipu, Mac e índice | Contenido del `.md`, sello del frontmatter, listas `.txt` por oleada | `tools/figuras/aplicar_oleada.sh`, `fusionar_figuras.py` | El índice no sabe qué versión del `.md` tiene (los fallos de reindexado ya no se ocultan) |
+| 3 | Bucle agéntico y resultado de la respuesta | `TypedDict` parcial: `scope`, `no_context`, `grounded`, `claims_total` | `backend/src/rag/graph/agent.py` | Rechazo y Sin verificar comparten campos en el evento `end` (`no_context` ya sale con `grounded: null`) |
+| 4 | Veredicto por afirmación del verificador | Listas de `(estado, motivo)` por afirmación en dos rondas | `backend/src/rag/graph/agent.py` | Precedencia Sustentada sobre Refutada (el tope de 25 ya se informa) |
+| 5 | Protocolo SSE de `/api/chat` | Orden de eventos de LangGraph, flag `sources_sent`, dict `final` | `backend/src/rag/api/main.py` | `final` duplica el estado del grafo (la cuota ya se devuelve si el agente falla) |
+| 6 | Mensaje del asistente en el frontend | Campos opcionales de `ChatMessage` | `frontend/src/App.tsx` | El paso del agente se oculta al llegar el texto (la respuesta detenida ya se marca) |
+| 7 | Cadena SLURM de lectura y verificación | Filas sin `error` en dos JSONL, sucesor en la cola | `tools/figuras/figuras_job.slurm` | Sucesor congelado con el `.slurm` del `sbatch` (el estado terminal ya existe) |
+| 8 | Estado de una página en el pipeline de figuras | Presencia de `.jpg`, filas JSONL, cabecera en el `.md` | `tools/figuras/prep_figuras.py`, `extraer_figuras.py` | Dos lecturas de una clave comparten la verificación de la vieja (el worklist ya no pierde filas) |
 | 9 | Fusión en el vault por oleadas | El propio texto del `.md` (cabeceras y marcadores) | `tools/figuras/fusionar_figuras.py` | Bloques de formato viejo sin salida salvo el cierre |
 | 10 | Procedencia de las lecturas en el chunker | Variables locales `activa` y `ultima` | `backend/src/rag/ingestion/chunker.py` | Bloque sin cierre marca el resto del documento como lectura de máquina |
 | 11 | Esquema de puntos y colección en Qdrant | Presencia de `*_norm`, grafía de `tipo`, dimensión fija | `backend/src/rag/ingestion/indexer.py` | Cambio de embedder sin registro; backfill sin llamador |
-| 12 | Cuota diaria por IP | Filas `(ip, day, count)` en SQLite | `backend/src/rag/api/quota.py` | Sana; el aviso del frontend queda viejo tras guardar la clave |
-| 13 | Salud del servicio | Dict `out` con `status` y un campo por componente | `backend/src/rag/api/main.py` | No prueba DeepSeek; colección ausente se informa como Qdrant caído |
-| 14 | Bucles de reintento | Contador `attempt` / `intento` | `embedder.py`, `extraer_figuras.py` | Sanos en el proceso; sin límite entre procesos (ver 7) |
+| 12 | Cuota diaria por IP | Filas `(ip, day, count)` en SQLite | `backend/src/rag/api/quota.py` | Sana; un corte o Detener siguen consumiendo el intento, por diseño |
+| 13 | Salud del servicio | Dict `out` con `status` y un campo por componente | `backend/src/rag/api/main.py` | No prueba DeepSeek (la colección ausente ya se informa aparte) |
+| 14 | Bucles de reintento | Contador `attempt` / `intento` | `embedder.py`, `extraer_figuras.py` | Sanos en el proceso; entre procesos los acota la cadena SLURM (ver 7) |
 
 ---
 
@@ -56,12 +61,13 @@ vault se salta, se reindexa, falla o se purga.
 
 - `backend/src/rag/ingestion/indexer.py:262` `ingest_vault`.
 - `indexer.py:283` lee `existing` (doc_id a `source_hash`) desde Qdrant, también con `--force`.
-- `indexer.py:293-298` un documento que no carga cuenta como fallido y como visto.
-- `indexer.py:306-312` condición de salto.
-- `indexer.py:326-329` embeber, borrar la versión vieja y hacer upsert.
-- `indexer.py:357` cálculo de `stale`; `indexer.py:362-405` `_purge_stale` con sus frenos.
+- `indexer.py:292-310` un documento ilegible (`OSError`) cuenta como fallido y como visto (`indexer.py:294-301`); un documento vacío cuenta como fallido y no como visto (`indexer.py:302-310`).
+- `indexer.py:317-323` condición de salto.
+- `indexer.py:337-340` embeber, borrar la versión vieja y hacer upsert.
+- `indexer.py:368-376` aviso de los doc_id de `--reindexar-lista` que no están en el vault.
+- `indexer.py:378` cálculo de `stale`; `indexer.py:383-426` `_purge_stale` con sus frenos.
 - `indexer.py:64-66` `IngestStats.ok`.
-- `backend/src/rag/ingestion/loader.py:51-62` `load_document` devuelve `None` si no lee el fichero o el cuerpo está vacío; `loader.py:64-70` hash de respaldo sin `source_hash`.
+- `backend/src/rag/ingestion/loader.py:67-77` `read_document` lanza `OSError` si no lee el fichero y `EmptyDocumentError` si el cuerpo está vacío; `loader.py:55-64` `load_document` devuelve `None` en los dos casos; `loader.py:79-85` hash de respaldo sin `source_hash`.
 - `backend/src/rag/ingestion/chunker.py:44-45` id `uuid5(doc_id|source_hash|i)`.
 - `backend/src/rag/ingestion/cli.py:79` `--allow-purge` sube el umbral a 1.0; `cli.py:98` código de salida.
 
@@ -81,7 +87,8 @@ contadores: `failed == 0 and purge_skipped == 0`.
 | Reindexando | Transitorio: chunk, embed, delete, upsert | Éxito: AlDia. Excepción: Fallido |
 | FallidoSinVersion | Era Nuevo y falló | Siguiente corrida lo reintenta |
 | FallidoConVersionVieja | Tenía versión y falló antes del borrado | Siguiente corrida lo reintenta; la versión vieja sigue servida |
-| Zombi | Indexado; el `.md` existe pero queda vacío o ilegible | Solo si alguien arregla o borra el fichero |
+| Ilegible | Indexado; el `.md` existe y no se puede leer | Siguiente corrida que lo lea |
+| Vaciado | Indexado; el `.md` existe y queda sin cuerpo | Purga como un Huerfano, o Retenido por los frenos |
 | Huerfano | En el índice, sin `.md` | Purga, o Retenido por los frenos |
 | PurgaRetenida | Vault vacío, o más del 50 % sin `--allow-purge` | Corrida con `--allow-purge` y vault no vacío |
 | Purgado | Terminal | Ninguno |
@@ -96,9 +103,11 @@ stateDiagram-v2
     Reindexando --> FallidoConVersionVieja: error antes del borrado
     FallidoSinVersion --> Reindexando: siguiente corrida
     FallidoConVersionVieja --> Reindexando: siguiente corrida
-    AlDia --> Zombi: md vacío o ilegible
-    Zombi --> Reindexando: md reparado
-    Zombi --> Huerfano: md borrado
+    AlDia --> Ilegible: error de lectura
+    Ilegible --> AlDia: lectura correcta
+    AlDia --> Vaciado: md sin cuerpo
+    Vaciado --> Purgado: frenos no activos
+    Vaciado --> PurgaRetenida: ratio mayor que 0.5
     AlDia --> Huerfano: md borrado o renombrado
     Huerfano --> Purgado: frenos no activos
     Huerfano --> PurgaRetenida: vault vacío o ratio mayor que 0.5
@@ -109,22 +118,25 @@ stateDiagram-v2
 
 **Invariantes.**
 
-- Una sola generación por doc_id. Se cumple: el borrado por doc_id va antes del upsert (`indexer.py:327-329`) y `existing` se consulta siempre (`indexer.py:283`).
-- Embeber antes de borrar (`indexer.py:326`). Se cumple: un fallo del embedder deja la versión vieja.
-- Un documento presente pero ilegible no se purga (`indexer.py:298`). Se cumple.
-- Frenos de purga: vault vacío (`indexer.py:380`) y ratio (`indexer.py:389-390`). Se cumplen. `--allow-purge` no salta el freno del vault vacío.
+- Una sola generación por doc_id. Se cumple: el borrado por doc_id va antes del upsert (`indexer.py:338-340`) y `existing` se consulta siempre (`indexer.py:283`).
+- Embeber antes de borrar (`indexer.py:337`). Se cumple: un fallo del embedder deja la versión vieja.
+- Un documento presente pero ilegible no se purga (`indexer.py:300`). Se cumple.
+- Un documento vaciado no conserva su versión vieja (`indexer.py:302-310`). Se cumple, con los frenos de purga.
+- Frenos de purga: vault vacío (`indexer.py:401`) y ratio (`indexer.py:410-411`). Se cumplen. `--allow-purge` no salta el freno del vault vacío.
 - Ids deterministas (`chunker.py:44-45`). Se cumple.
 - `source_hash` describe el contenido del `.md`. **No se cumple**: es el hash del PDF. Ver máquina 2.
 
 **Riesgos.**
 
-1. *verificado*. Ventana de ausencia. Entre el borrado con `wait=True` (`indexer.py:328`) y el upsert (`indexer.py:329`) el documento no existe para la API. Con `--force` la ventana se repite una vez por documento. Una consulta en ese momento no ve el documento, y `find_extreme_docs` (`backend/src/rag/retrieval/store.py:262`) puede elegir otro como "el más reciente".
-2. *verificado*. Estado Zombi. Un documento indexado cuyo `.md` queda vacío conserva su versión vieja sin límite de tiempo, porque se marca como visto (`indexer.py:298`). Cada corrida sale con 1. El E2E prueba un vacío nuevo (`backend/e2e/run_e2e.py:475-493`), sin versión previa.
+1. *verificado*. Ventana de ausencia. Entre el borrado con `wait=True` (`indexer.py:339`) y el upsert (`indexer.py:340`) el documento no existe para la API. Con `--force` la ventana se repite una vez por documento. Una consulta en ese momento no ve el documento, y `find_extreme_docs` (`backend/src/rag/retrieval/store.py:265`) puede elegir otro como "el más reciente".
+2. *verificado*. Estado Zombi. Un documento indexado cuyo `.md` queda vacío conservaba su versión vieja sin límite de tiempo, porque se marcaba como visto. Cada corrida sale con 1. El E2E probaba solo un vacío nuevo (`backend/e2e/run_e2e.py:476-494`), sin versión previa.
+   **Arreglado** (commit `3da35b2`): un `.md` vaciado ya no cuenta como visto y su versión entra en la purga con los mismos frenos; el E2E lo prueba (`run_e2e.py:695-715`). La corrida sigue saliendo con 1 mientras el fichero esté vacío, como pide el E2E para cualquier documento vacío.
 3. *verificado*. Renombrado masivo. Si cambian más de la mitad de los doc_id (por ejemplo, al reorganizar carpetas), las versiones nuevas se indexan dentro del bucle y la purga posterior se retiene. El índice queda con dos copias de cada contrato bajo doc_id distintos. El código de salida 1 avisa, pero el retrieval ya sirve duplicados.
 4. *hipótesis*. Caída a mitad de upsert. Si Qdrant aplica solo parte de los puntos, `existing` ya muestra el hash nuevo y la siguiente corrida salta el documento incompleto. El código no compara el número de chunks. Una caída o una excepción entre borrado y upsert sí se repara sola: el documento sale de `existing` y vuelve como Nuevo en la siguiente corrida. Hasta entonces (30 min con launchd) el documento falta en el índice.
 5. *hipótesis*. Corridas concurrentes. No hay cerrojo. launchd lanza la ingesta cada 30 min (`docs/DEPLOYMENT.md`) y `aplicar_oleada.sh` lanza otra `docker compose run`. Con el mismo vault convergen por los ids deterministas. Con un vault que cambia en medio (rsync), el resultado depende del orden.
-6. *verificado*. El manifiesto solo registra `indexed` y `failed` (`indexer.py:339`, `indexer.py:352`). Saltos, purgas y purgas retenidas no dejan línea. Ningún código lee el manifiesto.
-7. *verificado*. Un doc_id de `--reindexar-lista` que no existe en el vault se ignora sin aviso (`cli.py:55-60`, `indexer.py:306-309`).
+6. *verificado*. El manifiesto solo registra `indexed` y `failed` (`indexer.py:350`, `indexer.py:363`). Saltos, purgas y purgas retenidas no dejan línea. Ningún código lee el manifiesto.
+7. *verificado*. Un doc_id de `--reindexar-lista` que no existe en el vault se ignoraba sin aviso (`cli.py:55-60`, `indexer.py:317-320`).
+   **Arreglado** (commit `3da35b2`): la ingesta registra un WARNING con los doc_id de la lista que no están en el vault (`indexer.py:368-376`).
 
 ---
 
@@ -135,12 +147,12 @@ stateDiagram-v2
 
 **Dónde.**
 
-- `tools/figuras/fusionar_figuras.py:280-284` escritura del `.md` en Khipu.
-- `fusionar_figuras.py:391-401` listas `docs_a_reindexar.txt` y `docs_con_figura.txt`.
+- `tools/figuras/fusionar_figuras.py:283-287` escritura del `.md` en Khipu.
+- `fusionar_figuras.py:406-416` listas `docs_a_reindexar.txt` y `docs_con_figura.txt`.
 - `fusionar_figuras.py:85-99` sello `figuras_leidas` en el frontmatter.
-- `tools/figuras/aplicar_oleada.sh:29-35` fusión; `:45-49` rsync; `:57-78` elección de la lista; `:86-88` reindexado; `:92` verificación.
-- `tools/figuras/cierre.sh:34-36` restauración; `:41-47` fusión; `:59-60` reconstrucción del backend; `:64-73` reindexado por sello.
-- `backend/src/rag/ingestion/indexer.py:306-312` salto por hash; `indexer.py:215-240` payload sin hash del `.md` ni sello.
+- `tools/figuras/aplicar_oleada.sh:21` `pipefail`; `:32-38` fusión; `:48-52` rsync; `:60-81` elección de la lista; `:89-92` reindexado; `:96` verificación.
+- `tools/figuras/cierre.sh:15` `pipefail`; `:36-45` comprobación del respaldo y restauración; `:50-56` fusión; `:68-70` reconstrucción del backend; `:79-92` reindexado por sello y por la lista de la fusión.
+- `backend/src/rag/ingestion/indexer.py:317-323` salto por hash; `indexer.py:215-240` payload sin hash del `.md` ni sello.
 
 **Codificación.** No existe un registro central. El estado se reparte entre el
 `.md` de Khipu, su copia en el Mac (un rsync externo cada 2 h, según
@@ -164,6 +176,7 @@ stateDiagram-v2
     M1 --> S: reindexar lista correcto
     M1 --> P: reindexado falla y llega otra oleada
     P --> S: modo sello si lleva sello
+    P --> S: cierre con la lista de su fusión
     P --> S: ingesta con force
     S --> K1: oleada nueva añade bloques
     S --> R: cierre restaura respaldo
@@ -173,22 +186,25 @@ stateDiagram-v2
 
 - Un documento que solo pierde marcadores falsos llega a M1 sin sello.
 - El modo por defecto reindexa `docs_con_figura.txt`. El modo `todo` reindexa `docs_a_reindexar.txt`.
-- El modo `sello` y el cierre reindexan solo los documentos con `figuras_leidas`.
+- El modo `sello` reindexa solo los documentos con `figuras_leidas`. El cierre reindexa esos y los de la lista de su fusión.
 
 **Invariante.** El índice refleja el vault. **No se cumple de forma
 automática**: la ingesta normal salta el documento porque el hash del PDF no
-cambió (`indexer.py:306-312`). Solo `--reindexar-lista` o `--force` mueven el
+cambió (`indexer.py:317-323`). Solo `--reindexar-lista` o `--force` mueven el
 documento al índice.
 
 **Riesgos.**
 
-1. *verificado*. El fallo del reindexado se oculta. `aplicar_oleada.sh:86-88` y `cierre.sh:71-73` pasan la ingesta por `| tail`. Con zsh y sin `pipefail`, el estado de la tubería es el de `tail`. El propio script describe este fallo para rsync (`aplicar_oleada.sh:41-44`) y lo repite con la ingesta. El código de salida final es el de `verificar_enriquecimiento.py`, que mira el vault y no el índice.
-2. *verificado*. Los documentos que solo pierden marcadores quedan en P. `docs_a_reindexar.txt` se calcula contra el vault actual (`fusionar_figuras.py:280`, `:391-393`). En la oleada siguiente ese documento ya no cambia y no aparece. El modo `sello` y el cierre (`cierre.sh:64-67`) tampoco lo incluyen, porque no lleva sello. El índice conserva los `![image](url)` alucinados de esos documentos hasta un `--force`.
+1. *verificado*. El fallo del reindexado se ocultaba. `aplicar_oleada.sh` y `cierre.sh` pasan la ingesta por `| tail`. Con zsh y sin `pipefail`, el estado de la tubería era el de `tail`. El propio script describe este fallo para rsync (`aplicar_oleada.sh:44-47`) y lo repetía con la ingesta. El código de salida final era el de `verificar_enriquecimiento.py`, que mira el vault y no el índice.
+   **Arreglado** (commit `7bfe817`): los dos scripts usan `set -uo pipefail`, y un fallo de la ingesta o del build corta el script con 1 (`aplicar_oleada.sh:89-92`, `cierre.sh:68-70`, `cierre.sh:89-92`).
+2. *verificado*. Los documentos que solo pierden marcadores quedan en P. `docs_a_reindexar.txt` se calcula contra el vault actual (`fusionar_figuras.py:283`, `:406-408`). En la oleada siguiente ese documento ya no cambia y no aparece. El modo `sello` tampoco lo incluye, porque no lleva sello. El índice conservaba los `![image](url)` alucinados de esos documentos hasta un `--force`.
+   **Arreglado** (commit `7bfe817`): el cierre reindexa también la lista `docs_a_reindexar.txt` de su propia fusión, que parte del vault virgen y nombra todo documento cambiado (`cierre.sh:79-85`). Entre oleadas el documento sigue en P hasta el cierre.
 3. *verificado*. Ningún proceso responde a la pregunta "qué versión del `.md` tiene el índice". El payload no guarda un hash del `.md` ni el sello (`indexer.py:215-240`).
-4. *hipótesis*. `cierre.sh:34` restaura el respaldo más antiguo. Si el OCR reescribió un documento después del respaldo, el cierre lo devuelve a la versión anterior con su `source_hash` anterior. La ingesta normal lo ve Cambiado y reindexa el contrato viejo. Los PDF del registro no se editan en operación normal (`docs/FIGURAS.md`, "Qué sobrevive a qué"), así que la probabilidad es baja.
-5. *hipótesis*. Ventana del cierre. Entre la restauración (`cierre.sh:36`) y la fusión (`cierre.sh:41-47`) el vault de Khipu está virgen. Si el rsync periódico corre en ese momento, el Mac recibe el vault virgen. La ingesta periódica salta por hash. Un reindexado manual en esa ventana indexaría la versión virgen.
-6. *verificado*. `cierre.sh:59-60` reconstruye y reinicia el backend. Esa acción corta cualquier stream SSE en curso.
-7. *verificado*, menor. `figuras_leidas` guarda las inserciones de la pasada actual (`fusionar_figuras.py:277-278`). Un documento que gana una figura en la segunda oleada pasa de 3 a 1.
+4. *hipótesis*. `cierre.sh:36` restaura el respaldo más antiguo. Si el OCR reescribió un documento después del respaldo, el cierre lo devuelve a la versión anterior con su `source_hash` anterior. La ingesta normal lo ve Cambiado y reindexa el contrato viejo. Los PDF del registro no se editan en operación normal (`docs/FIGURAS.md`, "Qué sobrevive a qué"), así que la probabilidad es baja.
+5. *hipótesis*. Ventana del cierre. Entre la restauración (`cierre.sh:45`) y la fusión (`cierre.sh:50-56`) el vault de Khipu está virgen. Si el rsync periódico corre en ese momento, el Mac recibe el vault virgen. La ingesta periódica salta por hash. Un reindexado manual en esa ventana indexaría la versión virgen.
+6. *verificado*. `cierre.sh:68-70` reconstruye y reinicia el backend. Esa acción corta cualquier stream SSE en curso.
+7. *verificado*, menor. `figuras_leidas` guardaba las inserciones de la pasada actual. Un documento que ganaba una figura en la segunda oleada pasaba de 3 a 1.
+   **Arreglado** (commit `7bfe817`): el sello cuenta todos los bloques del documento con `YA_INSERTADO_RE` (`fusionar_figuras.py:277-281`).
 
 ---
 
@@ -199,12 +215,12 @@ reformulación, generación y verificación, o cortarla antes.
 
 **Dónde.**
 
-- `backend/src/rag/graph/agent.py:721-749` construcción del grafo.
-- `agent.py:274-377` `analyze`; `agent.py:291` cinturón de alcance; `agent.py:296` filtros de la UI sobre los extraídos; `agent.py:326-361` selector temporal.
-- `agent.py:379-427` `retrieve` con dos modos y dos reintentos sin filtros (`agent.py:392-396`, `agent.py:417-426`).
-- `agent.py:429-461` `grade`; `agent.py:431` omite el grading en modo multi-documento; `agent.py:454` fallback permisivo.
-- `agent.py:463-477` `rewrite`; `agent.py:691-697` `after_grade`.
-- `agent.py:681-687` `no_context`; `agent.py:710-719` `refuse`.
+- `backend/src/rag/graph/agent.py:739-767` construcción del grafo.
+- `agent.py:276-379` `analyze`; `agent.py:293` cinturón de alcance; `agent.py:298` filtros de la UI sobre los extraídos; `agent.py:328-363` selector temporal.
+- `agent.py:381-429` `retrieve` con dos modos y dos reintentos sin filtros (`agent.py:394-398`, `agent.py:419-428`).
+- `agent.py:431-463` `grade`; `agent.py:433` omite el grading en modo multi-documento; `agent.py:456` fallback permisivo.
+- `agent.py:465-479` `rewrite`; `agent.py:709-715` `after_grade`.
+- `agent.py:696-705` `no_context`; `agent.py:728-737` `refuse`.
 - `backend/src/rag/graph/state.py:10-37` `AgentState`, `TypedDict` con `total=False`.
 - `backend/src/rag/config.py:74` `max_query_rewrites = 2`.
 
@@ -241,25 +257,26 @@ Resultados terminales, tal como llegan en el evento `end`:
 | Resultado | `grounded` | `no_context` | `claims_total` | `claim_issues` |
 |---|---|---|---|---|
 | Rechazo (fuera de tema o volcado) | `null` | `false` | 0 | vacío |
-| Sin contexto | `true` | `true` | 0 | vacío |
+| Sin contexto | `null` | `true` | 0 | vacío |
 | Verificada | `true` | `false` | mayor que 0 | vacío |
 | Refutada | `false` | `false` | mayor que 0 | con alguna `refutada` |
-| No concluyente | `null` | `false` | mayor que 0 | sin `refutada` |
+| No concluyente | `null` | `false` | mayor que 0 | sin `refutada`, o `claims_unchecked` mayor que 0 |
 | Sin verificar | `null` | `false` | 0 | vacío |
 
 **Invariantes.**
 
-- El bucle termina. Se cumple: `after_grade` corta en `max_query_rewrites` (`agent.py:694`).
-- Los filtros de la UI mandan y nunca se relajan. Se cumple: `agent.py:296`, `agent.py:392`, `agent.py:419-421`.
-- El grading ante una respuesta ilegible del modelo deja pasar el fragmento (`agent.py:454`). Se cumple.
+- El bucle termina. Se cumple: `after_grade` corta en `max_query_rewrites` (`agent.py:712`).
+- Los filtros de la UI mandan y nunca se relajan. Se cumple: `agent.py:298`, `agent.py:394`, `agent.py:421-423`.
+- El grading ante una respuesta ilegible del modelo deja pasar el fragmento (`agent.py:456`). Se cumple.
 
 **Riesgos.**
 
-1. *verificado*. `no_context` devuelve `grounded: true` (`agent.py:686`). El frontend lo filtra porque exige `total > 0` para la insignia (`frontend/src/components/Message.tsx:43`). `backend/eval/run_eval.py:56` suma `bool(grounded)`: cada "no está en el índice" cuenta como respuesta fundamentada. El grounded rate sube cuando el retrieval empeora.
+1. *verificado*. `no_context` devolvía `grounded: true`. El frontend lo filtraba porque exige `total > 0` para la insignia (`frontend/src/components/Message.tsx:49`). `backend/eval/run_eval.py:56` suma `bool(grounded)`: cada "no está en el índice" contaba como respuesta fundamentada. El grounded rate subía cuando el retrieval empeoraba.
+   **Arreglado** (commit `03c57b3`): `no_context` devuelve `grounded: None` (`agent.py:704`), y el eval deja de contarlo como fundamentado.
 2. *verificado*. Rechazo y Sin verificar tienen la misma combinación de campos. Solo el texto de la respuesta los separa. Un cliente distinto del frontend no puede saber que la verificación no corrió.
-3. *verificado*. Con filtros de la UI que dejan cero resultados, `rewrite` cambia solo `search_query` (`agent.py:477`). Los filtros siguen. El agente gasta dos reformulaciones y dos búsquedas antes de Sin contexto. Esto ocurre con los puntos legados sin `*_norm` (máquina 11).
-4. *verificado* el mecanismo, *hipótesis* el disparador. En modo multi-documento con selector temporal, el reintento sin filtros (`agent.py:392-396`) no comprueba si los `doc_id` vienen del selector. Si la búsqueda acotada devolviera vacío, el generador recibiría una `selector_note` que nombra N documentos y un contexto de otros. La búsqueda densa con filtro casi siempre devuelve puntos, así que el caso es raro.
-5. *verificado*. No hay reintento ni fallback entre modelos o proveedores. El proveedor se fija al construir el agente (`backend/src/rag/llm.py:23`, `llm.py:41`). Solo `verify` atrapa excepciones (`agent.py:580`, `agent.py:606`). Un fallo en cualquier otro nodo termina en Error.
+3. *verificado*. Con filtros de la UI que dejan cero resultados, `rewrite` cambia solo `search_query` (`agent.py:479`). Los filtros siguen. El agente gasta dos reformulaciones y dos búsquedas antes de Sin contexto. Esto ocurre con los puntos legados sin `*_norm` (máquina 11).
+4. *verificado* el mecanismo, *hipótesis* el disparador. En modo multi-documento con selector temporal, el reintento sin filtros (`agent.py:394-398`) no comprueba si los `doc_id` vienen del selector. Si la búsqueda acotada devolviera vacío, el generador recibiría una `selector_note` que nombra N documentos y un contexto de otros. La búsqueda densa con filtro casi siempre devuelve puntos, así que el caso es raro.
+5. *verificado*. No hay reintento ni fallback entre modelos o proveedores. El proveedor se fija al construir el agente (`backend/src/rag/llm.py:23`, `llm.py:41`). Solo `verify` atrapa excepciones (`agent.py:588`, `agent.py:619`). Un fallo en cualquier otro nodo termina en Error.
 6. *verificado*. La búsqueda léxica cae a solo densa sin señal (`backend/src/rag/retrieval/store.py:249-251`). El modo degradado solo aparece como WARNING en el log. El agente, la API y el usuario no lo ven.
 
 ---
@@ -271,10 +288,10 @@ que cita y resumir el resultado en `grounded`.
 
 **Dónde.**
 
-- `backend/src/rag/graph/agent.py:496-523` `_extract_claims`; `agent.py:506` tope `MAX_CLAIMS`; `agent.py:520` descarta citas fuera de rango.
-- `agent.py:525-561` `_refute`; `agent.py:557` acepta estados de `CLAIM_STATES`.
-- `agent.py:563-679` `verify`: `agent.py:576-584` salidas tempranas; `agent.py:591-595` asignación de la única fuente citada; `agent.py:621-638` segunda ronda; `agent.py:640-660` precedencia; `agent.py:661-667` veredicto global.
-- `backend/src/rag/graph/prompts.py:243` `CLAIM_STATES`.
+- `backend/src/rag/graph/agent.py:498-525` `_extract_claims`; `agent.py:522` descarta citas fuera de rango.
+- `agent.py:527-563` `_refute`; `agent.py:559` acepta estados de `REFUTE_STATES`.
+- `agent.py:565-694` `verify`: `agent.py:575-592` salidas tempranas; `agent.py:596-597` tope `MAX_CLAIMS` y `claims_unchecked`; `agent.py:603-608` asignación de la única fuente citada; `agent.py:634-651` segunda ronda; `agent.py:653-672` precedencia; `agent.py:674-680` veredicto global.
+- `backend/src/rag/graph/prompts.py:243` `CLAIM_STATES`; `prompts.py:247` `REFUTE_STATES`.
 
 **Codificación.** Cada afirmación es un dict `{texto, citas}`. Sus veredictos
 son una lista de tuplas `(estado, motivo)` acumulada en dos rondas. El estado
@@ -302,22 +319,25 @@ stateDiagram-v2
     SinCita --> [*]
 ```
 
-Veredicto global: `True` si todas son Sustentada; `False` si alguna es
-Refutada; `None` en el resto. También `None` con `claims_total = 0` cuando no
+Veredicto global: `False` si alguna es Refutada; `True` si todas son
+Sustentada y ninguna quedó fuera del tope; `None` en el resto. También `None` con `claims_total = 0` cuando no
 hay documentos, no hay respuesta, el extractor falla o no devuelve nada.
 
 **Invariantes.**
 
-- Lo refutado no se reabre en la segunda ronda (`agent.py:624`). Se cumple.
-- Una cita fuera de rango se descarta (`agent.py:520`). Se cumple.
-- Un fallo del refutador nunca tumba la respuesta (`agent.py:606-611`). Se cumple, y degrada hacia No concluyente.
+- Lo refutado no se reabre en la segunda ronda (`agent.py:637`). Se cumple.
+- Una cita fuera de rango se descarta (`agent.py:522`). Se cumple.
+- Un fallo del refutador nunca tumba la respuesta (`agent.py:619-624`). Se cumple, y degrada hacia No concluyente.
 
 **Riesgos.**
 
-1. *verificado*. Tope silencioso. `raw[:MAX_CLAIMS]` (`agent.py:506`) corta en 25. Si las 25 primeras se sostienen, `grounded` es `True` y la insignia dice "25 afirmaciones contrastadas". La interfaz no avisa de las afirmaciones que no se contrastaron.
-2. *verificado* el mecanismo, *hipótesis* el impacto. Precedencia Sustentada sobre Refutada (`agent.py:653-657`). Una afirmación que un fragmento contradice y otro sostiene termina Sustentada. Si el fragmento que la sostiene es de otro contrato con la misma cifra, la atribución errónea puede pasar.
-3. *verificado*, menor. El refutador puede devolver `sin_cita` (`agent.py:557` lo acepta). Ese valor se mezcla con el `sin_cita` del extractor, aunque la afirmación sí tenía cita.
-4. *verificado*. Sin verificar llega al frontend sin ninguna insignia (`Message.tsx:43-60`). El usuario no distingue una respuesta que nadie verificó de una respuesta sin datos.
+1. *verificado*. Tope silencioso. `raw[:MAX_CLAIMS]` cortaba en 25. Si las 25 primeras se sostenían, `grounded` era `True` y la insignia decía "25 afirmaciones contrastadas". La interfaz no avisaba de las afirmaciones que no se contrastaron.
+   **Arreglado** (commit `03c57b3`): las sobrantes se cuentan en `claims_unchecked` (`agent.py:596-597`), `grounded` no puede ser `True` con ellas y el frontend muestra "N afirmaciones sin contrastar" (`Message.tsx:67-75`).
+2. *verificado* el mecanismo, *hipótesis* el impacto. Precedencia Sustentada sobre Refutada (`agent.py:666-670`). Una afirmación que un fragmento contradice y otro sostiene termina Sustentada. Si el fragmento que la sostiene es de otro contrato con la misma cifra, la atribución errónea puede pasar.
+3. *verificado*, menor. El refutador podía devolver `sin_cita`. Ese valor se mezclaba con el `sin_cita` del extractor, aunque la afirmación sí tenía cita.
+   **Arreglado** (commit `03c57b3`): `_refute` solo acepta `REFUTE_STATES` (`agent.py:559`, `prompts.py:247`); un `sin_cita` del refutador cuenta como sin veredicto.
+4. *verificado*. Sin verificar llegaba al frontend sin ninguna insignia. El usuario no distinguía una respuesta que nadie verificó de una respuesta sin datos.
+   **Arreglado** (commit `03c57b3`): una respuesta con fuentes, sin afirmaciones contrastadas y sin `no_context` lleva la marca "Sin verificar" (`Message.tsx:76-85`).
 
 ---
 
@@ -328,10 +348,10 @@ resultado final en un solo stream.
 
 **Dónde.**
 
-- `backend/src/rag/api/main.py:327` ruta con la dependencia `chat_access`; `main.py:185-213` cuota.
-- `main.py:331-386` `event_stream`: `main.py:340-341` `final` y `sources_sent`; `main.py:346-347` `status`; `main.py:348-356` fusión de salidas y `sources`; `main.py:357-364` `token`; `main.py:365-379` `end`; `main.py:380-386` `error`.
+- `backend/src/rag/api/main.py:351` ruta con la dependencia `chat_access`; `main.py:185-204` `chat_access` decide quién paga; `main.py:207-224` `consume_quota` cobra; `main.py:354` cobro dentro del handler.
+- `main.py:356-418` `event_stream`: `main.py:365-366` `final` y `sources_sent`; `main.py:371-372` `status`; `main.py:373-381` fusión de salidas y `sources`; `main.py:382-389` `token`; `main.py:390-405` `end`; `main.py:406-418` `error` y devolución del intento.
 - `main.py:40-49` `STEP_LABELS` filtra los nombres de nodo.
-- `frontend/src/api.ts:39-97` lector del stream; `frontend/nginx.conf:94-106` proxy sin buffering.
+- `frontend/src/api.ts:39-102` lector del stream; `frontend/nginx.conf:94-106` proxy sin buffering.
 
 **Codificación.** No hay un tipo para la gramática del stream. El orden sale
 de los eventos `on_chain_start` y `on_chain_end` de LangGraph filtrados por
@@ -374,16 +394,18 @@ stateDiagram-v2
 **Invariantes.**
 
 - Un solo evento terminal (`end` o `error`). Se cumple por la estructura del generador, salvo desconexión o proceso muerto.
-- `sources` como máximo una vez y antes de `generate` (`main.py:352`). Se cumple: un `grade` con fragmentos siempre lleva a `generate`.
-- `end.sources` coincide con `relevant_documents` final (`main.py:372`). Se cumple.
+- `sources` como máximo una vez y antes de `generate` (`main.py:377`). Se cumple: un `grade` con fragmentos siempre lleva a `generate`.
+- `end.sources` coincide con `relevant_documents` final (`main.py:397`). Se cumple.
 
 **Riesgos.**
 
-1. *verificado*. La cuota se consume antes del stream: `chat_access` corre como dependencia (`main.py:327`, `main.py:203`). Un error del agente, un corte de red o "Detener" no devuelven el intento.
-2. *hipótesis*. Desconexión del cliente. Starlette cancela el generador. `except Exception` (`main.py:380`) no atrapa la cancelación, así que no se emite `error` y la cancelación llega a la llamada httpx en curso. Las búsquedas que corren en `asyncio.to_thread` (`agent.py:379-427`) terminan en su hilo. Si Ollama detiene la generación al cerrarse la conexión depende de Ollama.
-3. *verificado*. `final` duplica el estado del grafo (`main.py:351`). Hoy funciona porque cada nodo devuelve un parche plano sin reducers. Si un nodo futuro usa un reducer de lista, o un sub-runnable lleva el nombre de un paso, `final` diverge del estado real sin ningún error.
-4. *verificado*, menor. El texto que llega en tokens puede diferir de `end.answer`, porque `strip_ghost_citations` (`agent.py:494`) quita marcadores `[n]` que ya se mostraron. El frontend reemplaza el contenido al recibir `end` (`frontend/src/App.tsx:132-145`). El usuario ve desaparecer una cita.
-5. *verificado*. El lector del frontend descarta en silencio cualquier excepción del manejador de eventos, además de los frames corruptos: el `try` envuelve `onEvent(JSON.parse(...))` (`frontend/src/api.ts:90-94`).
+1. *verificado*. La cuota se consumía antes del stream: `chat_access` corría como dependencia y cobraba antes de validar el cuerpo, así que una petición mal formada (422) también gastaba un intento. Un error del agente, un corte de red o "Detener" no devolvían el intento.
+   **Arreglado** (commit `65c2d78`): el intento se cobra dentro del handler, después de validar el cuerpo (`main.py:354`), y un error del agente lo devuelve (`main.py:410-414`, `quota.py:95-102`). Un corte de red o "Detener" siguen contando a propósito: devolverlos permitiría preguntas gratis abandonándolas a medias.
+2. *hipótesis*. Desconexión del cliente. Starlette cancela el generador. `except Exception` (`main.py:406`) no atrapa la cancelación, así que no se emite `error` y la cancelación llega a la llamada httpx en curso. Las búsquedas que corren en `asyncio.to_thread` (`agent.py:379-427`) terminan en su hilo. Si Ollama detiene la generación al cerrarse la conexión depende de Ollama.
+3. *verificado*. `final` duplica el estado del grafo (`main.py:376`). Hoy funciona porque cada nodo devuelve un parche plano sin reducers. Si un nodo futuro usa un reducer de lista, o un sub-runnable lleva el nombre de un paso, `final` diverge del estado real sin ningún error.
+4. *verificado*, menor. El texto que llega en tokens puede diferir de `end.answer`, porque `strip_ghost_citations` (`agent.py:496`) quita marcadores `[n]` que ya se mostraron. El frontend reemplaza el contenido al recibir `end` (`frontend/src/App.tsx:138-152`). El usuario ve desaparecer una cita.
+5. *verificado*. El lector del frontend descartaba en silencio cualquier excepción del manejador de eventos, además de los frames corruptos: el `try` envolvía `onEvent(JSON.parse(...))`.
+   **Arreglado** (commit `d1a4160`): el `try` envuelve solo `JSON.parse`, y una excepción del manejador llega al `catch` de `send` como error visible (`frontend/src/api.ts:90-99`).
 
 ---
 
@@ -393,12 +415,13 @@ stateDiagram-v2
 
 **Dónde.**
 
-- `frontend/src/types.ts:23-35` `ChatMessage`.
-- `frontend/src/App.tsx:77-172` `send`: `App.tsx:80` guarda de `busy`; `App.tsx:86-88` historial; `App.tsx:90-94` placeholder; `App.tsx:117` y `App.tsx:153-159` flag `finished`; `App.tsx:160-165` abort y errores; `App.tsx:174` `stop`; `App.tsx:176-185` `nuevaConversacion`.
-- `frontend/src/components/Message.tsx:23`, `:34`, `:41`, `:43`, `:52`, `:61`, `:74` derivación visual.
+- `frontend/src/types.ts:23-39` `ChatMessage`.
+- `frontend/src/App.tsx:77-179` `send`: `App.tsx:80` guarda de `busy`; `App.tsx:86-94` historial; `App.tsx:96-100` placeholder; `App.tsx:123` y `App.tsx:160-166` flag `finished`; `App.tsx:167-172` abort y errores; `App.tsx:181` `stop`; `App.tsx:183-192` `nuevaConversacion`.
+- `frontend/src/components/Message.tsx:24`, `:35`, `:42`, `:49`, `:58`, `:67`, `:76`, `:86`, `:99` derivación visual.
 
 **Codificación.** Campos opcionales de `ChatMessage`: `streaming`, `status`,
-`error`, `content`, `grounded`, `claimsTotal`, `claimIssues`, `noContext`. La
+`error`, `stopped`, `content`, `grounded`, `claimsTotal`, `claimsUnchecked`,
+`claimIssues`, `noContext`. La
 combinación es el estado. `busy` y `abortRef` en `App` guardan el estado de la
 petición.
 
@@ -412,7 +435,7 @@ petición.
 | Completo | `streaming = false`, sin `error`, valores de `end` |
 | Error | `error` definido (evento `error`, HTTP o red) |
 | Cortado | `error` de "La conexión se cortó" (sin terminal) |
-| Detenido | `streaming = false`, sin `error`, contenido parcial o vacío |
+| Detenido | `streaming = false`, `stopped`, sin `error`, contenido parcial o vacío |
 
 ```mermaid
 stateDiagram-v2
@@ -439,13 +462,16 @@ stateDiagram-v2
 **Invariantes.**
 
 - Una sola petición en curso: `busy` (`App.tsx:80`). Se cumple.
-- Todo stream termina en un estado no `streaming`: `finished` (`App.tsx:153-159`). Se cumple.
+- Todo stream termina en un estado no `streaming`: `finished` (`App.tsx:160-166`). Se cumple.
+- El historial solo lleva pares completos de pregunta y respuesta (`App.tsx:86-94`). Se cumple.
 
 **Riesgos.**
 
-1. *verificado*. Detenido se ve como Completo. `App.tsx:163-165` pone `streaming: false` sin `error`. `Message.tsx:41` muestra el pie con el botón de fuentes y ninguna marca de "detenida". El texto parcial entra al historial del turno siguiente como respuesta del asistente (`App.tsx:86-88`). Si el usuario detuvo antes del primer token, el historial lleva un turno de asistente vacío.
-2. *verificado*. Un Error saca del historial la respuesta pero deja la pregunta (`App.tsx:87`). El turno siguiente envía dos mensajes de usuario seguidos.
-3. *verificado*, menor. El paso del agente se oculta en cuanto hay texto (`Message.tsx:23`). Durante `verify` el usuario ve el cursor y ningún indicador del paso.
+1. *verificado*. Detenido se veía como Completo. El `catch` ponía `streaming: false` sin `error`, y el pie mostraba el botón de fuentes sin ninguna marca de "detenida". El texto parcial entraba al historial del turno siguiente como respuesta del asistente. Si el usuario detenía antes del primer token, el historial llevaba un turno de asistente vacío.
+   **Arreglado** (commit `d1a4160`): Detener marca el mensaje con `stopped` (`App.tsx:171`), el pie muestra "Respuesta detenida" (`Message.tsx:42-48`) y el par pregunta y respuesta sale del historial (`App.tsx:86-94`).
+2. *verificado*. Un Error sacaba del historial la respuesta pero dejaba la pregunta. El turno siguiente enviaba dos mensajes de usuario seguidos.
+   **Arreglado** (commit `d1a4160`): la pregunta sale del historial junto con su respuesta fallida (`App.tsx:86-94`).
+3. *verificado*, menor. El paso del agente se oculta en cuanto hay texto (`Message.tsx:24`). Durante `verify` el usuario ve el cursor y ningún indicador del paso.
 4. *verificado*, sin impacto. `nuevaConversacion` con un stream activo vacía la lista y aborta. El `catch` posterior llama a `updateLast` sobre una lista vacía y escribe el índice `-1`. React lo ignora.
 
 ---
@@ -457,7 +483,7 @@ contrastar las lecturas de dibujos, en jobs de 8 h encadenados.
 
 **Dónde.**
 
-- `tools/figuras/figuras_job.slurm:31-50` `pendientes()`; `:59-66` decisión de seguir; `:70` sucesor con `afterany`; `:76-99` arranque de vLLM y sus salidas con 1; `:109-110` lectura con deadline; `:121` segunda pasada; `:127` salida.
+- `tools/figuras/figuras_job.slurm:31-50` `pendientes()`; `:59-66` decisión de seguir; `:70` sucesor con `afterany`; `:77-81` `cancelar_sucesor`; `:86-112` arranque de vLLM y sus salidas con 1; `:122-123` lectura con deadline; `:134` segunda pasada; `:138-145` regla de progreso; `:147` salida.
 - `tools/figuras/extraer_figuras.py:118-131` `cargar_hechos`; `:251-287` tres intentos por página; `:350-354` corte por deadline.
 - `tools/figuras/verificar_lecturas.py:94-105` `hechos`; `tools/figuras/pendientes_verificacion.py:31-41`.
 
@@ -479,8 +505,10 @@ stateDiagram-v2
     ArrancandoVllm --> Leyendo: health correcto
     Leyendo --> Verificando: fin de pendientes o deadline
     Verificando --> JobTerminado
-    VllmCaido --> Comprobando: sucesor arranca
-    JobTerminado --> Comprobando: sucesor arranca
+    VllmCaido --> Detenida: se cancela el sucesor
+    JobTerminado --> Detenida: ningún contador bajó, se cancela el sucesor
+    JobTerminado --> Comprobando: hubo progreso, sucesor arranca
+    Detenida --> [*]
     Leyendo --> Matado: TIMEOUT de SLURM
     Matado --> Comprobando: sucesor arranca
     Fin --> [*]
@@ -490,14 +518,18 @@ stateDiagram-v2
 
 - El sucesor se registra antes del trabajo (`figuras_job.slurm:70`), así sobrevive a un SIGKILL. Se cumple.
 - Una página con error se reintenta (`figuras_job.slurm:47`, `extraer_figuras.py:129`). Se cumple.
-- La cadena termina cuando no queda trabajo (`figuras_job.slurm:62-66`). **Solo se cumple si todo error es transitorio.**
+- La cadena termina cuando no queda trabajo (`figuras_job.slurm:62-66`), cuando vLLM no arranca (`:105-112`) o cuando un job no baja ningún contador (`:138-145`). Se cumple. Un TIMEOUT de SLURM no llega a esas líneas y deja vivo al sucesor.
 
 **Riesgos.**
 
-1. *verificado*. No hay estado terminal para una página que falla siempre. Una fila de error nunca cuenta como hecha y no hay contador de intentos entre jobs. El script reconoce "unas pocas páginas que fallan siempre" (`figuras_job.slurm:117-119`). Con una sola de ellas, cada job carga el modelo de 27B, reintenta esa página tres veces y encadena otro job. El error `sin_imagen` (`extraer_figuras.py:184`) tampoco cambia sin intervención.
-2. *verificado*. vLLM que no arranca sale con 1 (`figuras_job.slurm:95`, `:99`) después de registrar el sucesor (`:70`). Un fallo persistente (modelo ausente, GPU) produce una cadena sin fin de jobs fallidos.
+1. *verificado*. No había estado terminal para una página que falla siempre. Una fila de error nunca cuenta como hecha y no hay contador de intentos entre jobs. El script reconoce "unas pocas páginas que fallan siempre" (`figuras_job.slurm:130-132`). Con una sola de ellas, cada job cargaba el modelo de 27B, reintentaba esa página tres veces y encadenaba otro job. El error `sin_imagen` (`extraer_figuras.py:184`) tampoco cambia sin intervención.
+   **Arreglado** (commit `0ab7d55`): un job que no baja las páginas por leer ni las lecturas por verificar cancela su sucesor (`figuras_job.slurm:138-145`). Las filas de error se siguen reintentando cuando alguien relanza la cadena.
+2. *verificado*. vLLM que no arranca salía con 1 después de registrar el sucesor (`:70`). Un fallo persistente (modelo ausente, GPU) producía una cadena sin fin de jobs fallidos.
+   **Arreglado** (commit `0ab7d55`): las dos salidas de arranque cancelan el sucesor antes de salir (`figuras_job.slurm:105-112`). Un fallo transitorio de un nodo también detiene la cadena, y hay que relanzarla a mano.
 3. *verificado*. La segunda pasada tiene la misma regla: las filas de error de `verificacion.jsonl` no cuentan (`pendientes_verificacion.py:40`). Una lectura que el revisor no logra procesar mantiene `VER` por encima de 0.
-4. *hipótesis*. Tolerancia desigual a líneas corruptas. `extraer_figuras.py:118-131` y `pendientes()` ignoran una línea JSON rota. `verificar_lecturas.py:179` y `fusionar_figuras.py:316`, `:327` usan `json.loads` sin `try`. Una línea truncada por un SIGKILL en mitad de una escritura hace fallar la verificación en cada job, `VER` no baja y la cadena sigue. La misma línea bloquea la fusión.
+   **Arreglado** (commit `0ab7d55`): la misma regla de progreso del riesgo 1 cubre `VER`.
+4. *hipótesis*. Tolerancia desigual a líneas corruptas. `extraer_figuras.py:118-131` y `pendientes()` ignoran una línea JSON rota. `verificar_lecturas.py` y `fusionar_figuras.py` usaban `json.loads` sin `try`. Una línea truncada por un SIGKILL en mitad de una escritura hacía fallar la verificación en cada job, y la misma línea bloqueaba la fusión.
+   **Arreglado** (commit `0ab7d55`): las dos herramientas saltan y cuentan la línea rota (`verificar_lecturas.py:180-186`, `fusionar_figuras.py:322-326`, `:337-341`).
 5. *documentado* en `docs/FIGURAS.md`. El sucesor queda congelado con el `.slurm` del momento del `sbatch`.
 
 ---
@@ -509,10 +541,10 @@ inserción en el vault.
 
 **Dónde.**
 
-- `tools/figuras/prep_figuras.py:34-68` inventario por marcadores; `:70-87` render; `:93-95` escritura del worklist.
-- `tools/figuras/render_pendientes.py:20-33` render sin rehacer el worklist.
+- `tools/figuras/prep_figuras.py:34-68` inventario por marcadores; `:71-87` `fusionar_worklist`; `:102-125` render; `:130-136` escritura del worklist.
+- `tools/figuras/render_pendientes.py:20-39` render sin rehacer el worklist.
 - `tools/figuras/extraer_figuras.py:182-185` imagen y modo rescate.
-- `tools/figuras/verificar_lecturas.py:175-189` candidatas.
+- `tools/figuras/verificar_lecturas.py:175-198` candidatas.
 - `tools/figuras/fusionar_figuras.py:172-196` `util`; `:225-232` decisión por página.
 
 **Codificación.** Presencia de artefactos con la misma clave `doc__pN`: fila en
@@ -544,9 +576,11 @@ stateDiagram-v2
 
 **Riesgos.**
 
-1. *verificado*. `prep_figuras.py:93` reescribe el worklist entero desde los marcadores del vault. La fusión borra todos los marcadores de cada documento que procesa, también los de páginas aún sin lectura (`fusionar_figuras.py:261-264`). Un nuevo `prep` después de una oleada saca esas páginas del worklist. Además, `prep` nunca escribe `motivo` (`prep_figuras.py:58-66`). Las filas de rescate que lee `extraer_figuras.py:185` vienen de un proceso que no está en el repositorio, y un nuevo `prep` las pierde.
-2. *hipótesis*. Imagen parcial. El render da por hecha cualquier `.jpg` existente (`prep_figuras.py:76`, `render_pendientes.py:22`). Un `pdftoppm` muerto a mitad de escritura deja una imagen truncada que nadie vuelve a renderizar.
-3. *verificado* el mecanismo, *hipótesis* el disparador. Si una clave tiene dos lecturas correctas, la fusión toma la última (`fusionar_figuras.py:225`) y la verificación salta la clave ya revisada (`verificar_lecturas.py:188-189`). La verificación de la lectura vieja se aplica a la nueva. `marcar_dudosas` lista como aviso incluso los fragmentos que ya no aparecen (`fusionar_figuras.py:111-114`).
+1. *verificado*. `prep_figuras.py` reescribía el worklist entero desde los marcadores del vault. La fusión borra todos los marcadores de cada documento que procesa, también los de páginas aún sin lectura (`fusionar_figuras.py:261-264`). Un nuevo `prep` después de una oleada sacaba esas páginas del worklist. Además, `prep` nunca escribe `motivo` (`prep_figuras.py:58-66`). Las filas de rescate que lee `extraer_figuras.py:185` vienen de un proceso que no está en el repositorio, y un nuevo `prep` las perdía.
+   **Arreglado** (commit `0ab7d55`): `fusionar_worklist` conserva las filas previas que el inventario ya no ve y el `motivo` de las que sigue viendo, y el worklist se escribe con renombrado atómico (`prep_figuras.py:71-87`, `:130-136`).
+2. *hipótesis*. Imagen parcial. El render da por hecha cualquier `.jpg` existente (`prep_figuras.py:107`, `render_pendientes.py:22`). Un `pdftoppm` muerto a mitad de escritura dejaba una imagen truncada que nadie volvía a renderizar.
+   **Arreglado** (commit `0ab7d55`): los dos renders escriben en un nombre temporal y renombran al final (`prep_figuras.py:109-125`, `render_pendientes.py:27-39`).
+3. *verificado* el mecanismo, *hipótesis* el disparador. Si una clave tiene dos lecturas correctas, la fusión toma la última (`fusionar_figuras.py:225`) y la verificación salta la clave ya revisada (`verificar_lecturas.py:197-198`). La verificación de la lectura vieja se aplica a la nueva. `marcar_dudosas` lista como aviso incluso los fragmentos que ya no aparecen (`fusionar_figuras.py:111-114`).
 
 ---
 
@@ -558,8 +592,8 @@ marcadores falsos, de forma repetible mientras la extracción avanza.
 **Dónde.**
 
 - `tools/figuras/fusionar_figuras.py:34-37` `YA_INSERTADO_RE`.
-- `fusionar_figuras.py:211-294` `procesar_documento`: `:229-230` página ya insertada; `:237-238` variables `ya_insertado` y `pendiente`; `:240-250` bloque al cerrar la página; `:253-272` recorrido por líneas; `:282-284` escritura atómica por fichero.
-- `fusionar_figuras.py:340-356` respaldo único del vault virgen.
+- `fusionar_figuras.py:211-297` `procesar_documento`: `:229-230` página ya insertada; `:237-238` variables `ya_insertado` y `pendiente`; `:240-250` bloque al cerrar la página; `:253-272` recorrido por líneas; `:285-287` escritura atómica por fichero.
+- `fusionar_figuras.py:354-370` respaldo único del vault virgen.
 - `tools/figuras/README.md:72-80` motivo del cierre.
 
 **Codificación.** El propio texto del `.md` es el estado. La cabecera
@@ -587,13 +621,14 @@ stateDiagram-v2
 **Invariantes.**
 
 - Idempotencia por cabecera (`fusionar_figuras.py:229`). Se cumple.
-- Escritura atómica por fichero (`fusionar_figuras.py:282-284`). Se cumple.
-- El respaldo es el vault virgen. **No se comprueba**: la fusión lo crea solo si no existe ninguno en `--salida` (`fusionar_figuras.py:346-348`).
+- Escritura atómica por fichero (`fusionar_figuras.py:285-287`). Se cumple.
+- El respaldo es el vault virgen. La fusión lo crea solo si no existe ninguno en `--salida` (`fusionar_figuras.py:360-362`). El cierre lo comprueba antes de restaurar (`cierre.sh:41-44`).
 
 **Riesgos.**
 
 1. *verificado*. Un bloque de formato viejo no tiene salida dentro de las oleadas. La fusión lo salta (`fusionar_figuras.py:229-230`) aunque cambie el formato. Solo `cierre.sh` lo rehace. Mientras tanto el chunker trata el bloque sin cierre como abierto hasta el final del documento (máquina 10).
-2. *verificado*. Si la primera fusión con `--aplicar` corre con un `--salida` nuevo, o alguien limpia ese directorio, el respaldo "virgen" ya está enriquecido. `cierre.sh:34` restaura el respaldo más antiguo sin comprobarlo; solo imprime cuántos documentos llevan sello (`cierre.sh:37`).
+2. *verificado*. Si la primera fusión con `--aplicar` corre con un `--salida` nuevo, o alguien limpia ese directorio, el respaldo "virgen" ya está enriquecido. `cierre.sh` restauraba el respaldo más antiguo sin comprobarlo; solo imprimía cuántos documentos llevan sello (`cierre.sh:46`).
+   **Arreglado** (commit `7bfe817`): el cierre cuenta los documentos con sello dentro del respaldo antes de extraerlo y sale con 1 si hay alguno (`cierre.sh:41-44`).
 
 ---
 
@@ -648,7 +683,7 @@ compatibles con lo que espera el retrieval.
 - `indexer.py:88-128` índices de payload; `indexer.py:130-180` `backfill_norm_fields`; `indexer.py:215-240` payload con `tipo` en minúsculas y espejos `*_norm`.
 - `backend/src/rag/retrieval/store.py:37-69` filtros: `*_norm` (`store.py:44-53`) y doble grafía de `tipo` (`store.py:59-66`).
 - `backend/src/rag/config.py:37` modelo de embeddings.
-- `backend/src/rag/api/main.py:266-287` health.
+- `backend/src/rag/api/main.py:278-311` health.
 
 **Codificación.** No hay campo de versión. La versión de cada punto se infiere
 de la presencia de `*_norm` y de la grafía de `tipo`. La dimensión de la
@@ -679,8 +714,9 @@ stateDiagram-v2
 **Riesgos.**
 
 1. *verificado* el código, *hipótesis* la existencia de puntos legados. `backfill_norm_fields` (`indexer.py:130`) no tiene llamador en el repositorio. Un punto legado solo pasa a Actual si su documento se reindexa. Los filtros por razón social y suministrador buscan en `*_norm` (`store.py:44-53`) y no encuentran esos puntos. Con filtro de la UI no hay reintento sin filtro, y la pregunta termina en Sin contexto. El comentario de `store.py:60-62` sugiere que el índice histórico tiene puntos legados.
-2. *verificado*. Cambio de modelo de embeddings. `ensure_collection` no recrea una colección existente (`indexer.py:78`), tampoco con `--force`. Con otra dimensión falla cada upsert, y cada búsqueda densa de la API lanza una excepción que termina en `error`. Con la misma dimensión, los documentos al día se saltan por hash, conservan vectores del modelo viejo, y la búsqueda densa compara vectores de dos modelos sin aviso. `/api/health` solo comprueba que el modelo exista en Ollama (`main.py:279-287`).
-3. *verificado*. Con la colección ausente (despliegue nuevo antes de la primera ingesta), `store.count` lanza una excepción y `/api/health` informa `qdrant: error` (`main.py:266-272`) aunque Qdrant responda.
+2. *verificado*. Cambio de modelo de embeddings. `ensure_collection` no recrea una colección existente (`indexer.py:78`), tampoco con `--force`. Con otra dimensión falla cada upsert, y cada búsqueda densa de la API lanza una excepción que termina en `error`. Con la misma dimensión, los documentos al día se saltan por hash, conservan vectores del modelo viejo, y la búsqueda densa compara vectores de dos modelos sin aviso. `/api/health` solo comprueba que el modelo exista en Ollama (`main.py:303-311`).
+3. *verificado*. Con la colección ausente (despliegue nuevo antes de la primera ingesta), `store.count` lanza una excepción y `/api/health` informaba `qdrant: error` aunque Qdrant respondiera.
+   **Arreglado** (commit `1e5b90a`): el health pregunta si la colección existe y responde `qdrant: ok` y `collection: missing`, con estado degradado (`main.py:281-296`, `store.py:257-258`).
 
 ---
 
@@ -690,9 +726,9 @@ stateDiagram-v2
 
 **Dónde.**
 
-- `backend/src/rag/api/quota.py:59-86` `hit`: `quota.py:69-74` UPSERT; `quota.py:76-84` rechazo sin inflar; `quota.py:98-106` poda una vez por día de proceso.
-- `backend/src/rag/api/main.py:185-213` `chat_access`; `main.py:389-392` cabecera `X-Quota-Remaining`.
-- `frontend/src/api.ts:63-75` lectura de la cuota; `frontend/src/App.tsx:28`, `:334` aviso.
+- `backend/src/rag/api/quota.py:66-93` `hit`: `quota.py:76-81` UPSERT; `quota.py:83-91` rechazo sin inflar; `quota.py:95-102` `refund`; `quota.py:114-122` poda una vez por día de proceso; `quota.py:28-32` segundos hasta la medianoche UTC.
+- `backend/src/rag/api/main.py:185-224` `chat_access` y `consume_quota`; `main.py:420-423` cabecera `X-Quota-Remaining`.
+- `frontend/src/api.ts:63-75` lectura de la cuota; `frontend/src/App.tsx:28`, `:344` aviso.
 
 **Codificación.** Filas `(ip, day, count)` en SQLite. El día es una cadena de
 fecha UTC: el paso de día es implícito, porque cambia la clave. `_pruned_day`
@@ -705,19 +741,24 @@ stateDiagram-v2
     Disponible --> Disponible: hit con count menor que el límite
     Disponible --> Agotada: hit que alcanza el límite
     Agotada --> Agotada: hit rechazado, count se mantiene
+    Disponible --> Disponible: error del agente, refund resta 1
+    Agotada --> Disponible: error del agente, refund resta 1
     Disponible --> SinFila: cambia el día UTC
     Agotada --> SinFila: cambia el día UTC
 ```
 
-**Invariantes.** Incremento atómico bajo cerrojo (`quota.py:67-74`). Los
-rechazos no inflan el contador (`quota.py:76-84`). El contador sobrevive a un
+**Invariantes.** Incremento atómico bajo cerrojo (`quota.py:74-81`). Los
+rechazos no inflan el contador (`quota.py:83-91`). El contador sobrevive a un
 redeploy (volumen `quota_state`). Se cumplen. La máquina del backend es sana.
 
 **Riesgos.**
 
-1. *verificado*. El intento se consume aunque la respuesta falle o el usuario la detenga (máquina 5, riesgo 1).
-2. *verificado*. Tras guardar una API key, `quotaRemaining` conserva el último valor (`App.tsx:28`, `App.tsx:239`). Con clave válida el backend no envía `X-Quota-Remaining`, y `api.ts:74-75` solo actualiza cuando la cabecera existe. El aviso "Agotaste tus preguntas de hoy" sigue visible con acceso ilimitado hasta recargar.
-3. *verificado*, menor. `Retry-After` vale siempre 86400 (`main.py:211`). No coincide con la medianoche UTC que anuncia el mensaje.
+1. *verificado*. El intento se consumía aunque la respuesta fallara o el usuario la detuviera (máquina 5, riesgo 1).
+   **Arreglado** (commit `65c2d78`) para el error del agente y la petición mal formada. Detener y un corte de red siguen contando, por diseño.
+2. *verificado*. Tras guardar una API key, `quotaRemaining` conservaba el último valor. Con clave válida el backend no envía `X-Quota-Remaining`, y `api.ts:74-75` solo actualiza cuando la cabecera existe. El aviso "Agotaste tus preguntas de hoy" seguía visible con acceso ilimitado hasta recargar.
+   **Arreglado** (commit `65c2d78`): guardar la clave vacía `quotaRemaining` (`App.tsx:249`).
+3. *verificado*, menor. `Retry-After` valía siempre 86400. No coincidía con la medianoche UTC que anuncia el mensaje.
+   **Arreglado** (commit `65c2d78`): `Retry-After` lleva los segundos hasta la medianoche UTC (`main.py:222`, `quota.py:28-32`).
 
 ---
 
@@ -725,11 +766,12 @@ redeploy (volumen `quota_state`). Se cumplen. La máquina del backend es sana.
 
 **Propósito.** Informar a Docker y al usuario si el backend puede responder.
 
-**Dónde.** `backend/src/rag/api/main.py:244-295`; `backend/Dockerfile:52-53`;
+**Dónde.** `backend/src/rag/api/main.py:255-319`; `backend/Dockerfile:52-53`;
 `frontend/src/App.tsx:46`.
 
 **Codificación.** Dict `out` con `status` (`ok` o `degraded`), un campo por
-componente (`qdrant`, `ollama`, `missing_models`) y HTTP 200 o 503.
+componente (`qdrant`, `collection`, `ollama`, `missing_models`) y HTTP 200 o
+503.
 
 ```mermaid
 stateDiagram-v2
@@ -742,10 +784,11 @@ stateDiagram-v2
 
 **Riesgos.**
 
-1. *verificado*. Con `RAG_LLM_PROVIDER=deepseek`, el health no prueba DeepSeek (`main.py:279-283`). Informa `ok` con el proveedor de generación caído.
+1. *verificado*. Con `RAG_LLM_PROVIDER=deepseek`, el health no prueba DeepSeek (`main.py:303-307`). Informa `ok` con el proveedor de generación caído.
 2. *verificado*. El frontend lee la salud una sola vez al montar (`App.tsx:46`). El indicador no cambia durante la sesión.
-3. *hipótesis*. El docstring de `main.py:248-251` espera que `restart: unless-stopped` reaccione a `unhealthy`. Docker sin Swarm no reinicia un contenedor por ese motivo; la marca solo informa.
-4. Colección ausente informada como Qdrant caído: ver máquina 11, riesgo 3.
+3. *hipótesis*. El docstring del health esperaba que `restart: unless-stopped` reaccionara a `unhealthy`. Docker sin Swarm no reinicia un contenedor por ese motivo; la marca solo informa.
+   **Arreglado** (commit `1e5b90a`): el docstring ya no lo promete (`main.py:259-263`). El comportamiento de Docker no cambia.
+4. Colección ausente informada como Qdrant caído: ver máquina 11, riesgo 3. **Arreglado** (commit `1e5b90a`).
 
 ---
 
@@ -771,8 +814,8 @@ stateDiagram-v2
 
 **Valoración.** Dentro de un proceso los tres bucles son sanos y acotados. La
 sonda de dimensión (`embedder.py:48`, llamada en `indexer.py:276`) falla antes
-de tocar el índice si Ollama no responde, y la CLI sale con 1. El problema está
-fuera del bucle: entre jobs SLURM el reintento no tiene límite (máquina 7). Las
+de tocar el índice si Ollama no responde, y la CLI sale con 1. Entre jobs
+SLURM la regla de progreso detiene la cadena (máquina 7). Las
 llamadas al LLM del grafo no tienen reintento propio (máquina 3, riesgo 5).
 
 ---
@@ -788,20 +831,22 @@ frente a `.md` enriquecido).
 
 **P2. Errores sin contador.** "Una fila con error no está hecha" aparece en
 `extraer_figuras.py`, `figuras_job.slurm`, `verificar_lecturas.py` y
-`pendientes_verificacion.py`. La ingesta aplica la misma idea al documento
-Zombi. Sin contador de intentos, un error permanente crea un estado sin salida
-que se reintenta en cada pasada.
+`pendientes_verificacion.py`. Sin contador de intentos, un error permanente
+crea un estado sin salida que se reintenta en cada pasada. La cadena SLURM ya
+tiene una salida: un job sin progreso no encadena otro. La ingesta ya no
+aplica esta idea al documento vaciado.
 
 **P3. Listas de trabajo efímeras.** `worklist.jsonl`, `docs_a_reindexar.txt` y
 `docs_con_figura.txt` se sobrescriben en cada pasada con lo que cambió en esa
 pasada. Lo pendiente de pasadas anteriores se pierde. El modo `sello` corrige
 esto para una parte de los documentos porque deriva la lista de un estado
-durable (el frontmatter).
+durable (el frontmatter). El cierre recupera el resto, y `prep_figuras.py` ya
+conserva las filas del worklist anterior.
 
 **P4. Booleanos de tres valores y campos opcionales.** `grounded: bool | None`
-y los campos de `ChatMessage` codifican resultados distintos. Hay colisiones:
-Sin verificar y Rechazo comparten campos; Detenido y Completo también;
-Sin contexto lleva `grounded: true`.
+y los campos de `ChatMessage` codifican resultados distintos. Queda una
+colisión en el evento `end`: Sin verificar y Rechazo comparten campos. Detenido
+ya lleva `stopped` y Sin contexto lleva `grounded: null`.
 
 **P5. Estado reconstruido en paralelo.** `final` en el SSE copia el estado del
 grafo. `existing` en la ingesta copia el estado del índice al inicio de la
@@ -809,24 +854,28 @@ corrida. `pendientes()` en el `.slurm` reimplementa `cargar_hechos`. Cada copia
 es correcta hoy y diverge en silencio si la fuente cambia de forma.
 
 **P6. Códigos de salida perdidos.** Las tuberías `| tail` en `aplicar_oleada.sh`
-y `cierre.sh` ocultan el resultado de la ingesta. El script corrigió ese fallo
-para rsync y lo dejó para la ingesta.
+y `cierre.sh` ocultaban el resultado de la ingesta. Los dos scripts usan ya
+`pipefail` y cortan con 1 cuando la ingesta o el build fallan.
 
 **P7. Ventanas no atómicas entre procesos.** Borrado y upsert en Qdrant,
 restauración y fusión en Khipu, fusión y rsync hacia el Mac. Ningún cerrojo
 coordina la ingesta de launchd, la ingesta manual y la API.
 
-**P8. Degradación silenciosa.** Búsqueda léxica que cae a solo densa,
-verificación que no corre, puntos legados que los filtros no encuentran.
-Cada caso solo deja una línea de log.
+**P8. Degradación silenciosa.** Búsqueda léxica que cae a solo densa y puntos
+legados que los filtros no encuentran. Cada caso solo deja una línea de log.
+La verificación que no corre ya lleva la marca "Sin verificar".
 
 ### Riesgos que más conviene atender
 
-1. **Desfase entre vault e índice tras el enriquecimiento** (máquina 2). Guardar en el payload un hash del `.md` y compararlo en la ingesta normal. Quitar `| tail` de la ingesta en `aplicar_oleada.sh` y `cierre.sh`. Reindexar también los documentos que solo perdieron marcadores.
-2. **Cadena SLURM sin estado terminal** (máquina 7). Contar intentos por clave y tratar como terminal una página que supera N fallos. No encadenar cuando vLLM no arranca.
-3. **Señal de verificación engañosa** (máquinas 3 y 4). Devolver `grounded: null` en Sin contexto o excluirlo del eval. Avisar cuando el tope de 25 afirmaciones corta la verificación. Mostrar una marca cuando la verificación no corrió.
-4. **Cambio de modelo de embeddings sin registro** (máquina 11). Guardar el modelo en la colección y negarse a indexar o a servir si no coincide.
-5. **Respuesta detenida que parece completa** (máquina 6). Marcar el mensaje como detenido y no enviarlo como historial.
-6. **Documento Zombi y renombrado masivo** (máquina 1). Decidir una salida para un `.md` vacío que tenía versión. Purgar antes de indexar cuando la purga se va a retener, o avisar de los duplicados.
-7. **`prep_figuras.py` reescribe el worklist** (máquina 8). Impedir que una segunda corrida borre rescates y páginas ya sin marcador.
-8. **Puntos legados sin `*_norm`** (máquina 11). Llamar a `backfill_norm_fields` desde la ingesta o eliminarlo.
+1. **Desfase entre vault e índice tras el enriquecimiento** (máquina 2). Guardar en el payload un hash del `.md` y compararlo en la ingesta normal. Ya hecho: `pipefail` en los dos scripts y el cierre reindexa los documentos que solo perdieron marcadores.
+2. **Cambio de modelo de embeddings sin registro** (máquina 11). Guardar el modelo en la colección y negarse a indexar o a servir si no coincide.
+3. **Renombrado masivo** (máquina 1). Purgar antes de indexar cuando la purga se va a retener, o avisar de los duplicados.
+4. **Puntos legados sin `*_norm`** (máquina 11). Llamar a `backfill_norm_fields` desde la ingesta o eliminarlo.
+5. **Rechazo y Sin verificar con los mismos campos** (máquina 3). Añadir al evento `end` un campo que diga si la pregunta se rechazó.
+
+### Riesgos que siguen abiertos y por qué
+
+- Necesitan una decisión de producto o de operación: 1.1 (la ventana de ausencia; invertir el orden de upsert y borrado cambia el modo de fallo hacia dos generaciones), 1.3 (renombrado masivo), 1.5 (cerrojo entre corridas), 2.3 (hash del `.md` en el payload; obliga a reindexar todo el índice una vez), 3.2, 3.3, 3.5, 4.2, 11.1 y 11.2.
+- Comportamiento aceptado o documentado: 1.6 (nadie lee el manifiesto), 2.6 (el cierre reinicia el backend), 3.6 y 6.3 (avisos de interfaz), 5.4, 6.4, 7.5, 9.1 y 10.1 (el cierre los resuelve), 13.1 (probar DeepSeek en cada healthcheck tiene costo) y 13.2.
+- Hipótesis sin confirmar y sin un arreglo pequeño: 1.4, 2.4, 2.5, 3.4, 5.2 y 8.3.
+- Latentes, sin fallo hoy: 5.3 y 10.2.
