@@ -70,6 +70,16 @@ fi
 SIG=$(sbatch --parsable --dependency=afterany:$SLURM_JOB_ID "$FIG/figuras_job.slurm" 2>/dev/null)
 echo "sucesor encadenado: ${SIG:-ninguno}"
 
+# El estado terminal de la cadena. Sin él, un vLLM que no arranca o una página
+# que falla siempre encadenaban jobs sin fin: cada uno cargaba el modelo,
+# reintentaba lo mismo y registraba otro sucesor. Un TIMEOUT de SLURM no llega
+# a estas líneas y deja vivo al sucesor, que es lo correcto: ese job sí leía.
+cancelar_sucesor() {
+  [ -n "${SIG:-}" ] || return 0
+  echo "== $1: cancelo el sucesor $SIG =="
+  scancel "$SIG"
+}
+
 export XDG_CACHE_HOME=$FIG/.cache
 mkdir -p "$XDG_CACHE_HOME" "$FIG/out"
 
@@ -92,11 +102,14 @@ VPID=$!
 
 for i in $(seq 1 150); do
   curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && { echo "servidor arriba a los $((i*10))s"; break; }
-  kill -0 $VPID 2>/dev/null || { echo "!! vllm murió"; tail -40 "$FIG/logs/vllm-$SLURM_JOB_ID.log"; exit 1; }
+  kill -0 $VPID 2>/dev/null || {
+    echo "!! vllm murió"; tail -40 "$FIG/logs/vllm-$SLURM_JOB_ID.log"
+    cancelar_sucesor "vllm no arrancó"; exit 1; }
   sleep 10
 done
 curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 || {
-  echo "!! timeout esperando al servidor"; tail -40 "$FIG/logs/vllm-$SLURM_JOB_ID.log"; kill $VPID; exit 1; }
+  echo "!! timeout esperando al servidor"; tail -40 "$FIG/logs/vllm-$SLURM_JOB_ID.log"; kill $VPID
+  cancelar_sucesor "vllm no arrancó"; exit 1; }
 
 # Comparación controlada contra la corrida FP8: exactamente las mismas páginas,
 # para poder decidir la cuantización mirando las dos salidas y no una intuición.
@@ -122,6 +135,13 @@ $PY "$FIG/verificar_lecturas.py" --modelo "$NOMBRE" --concurrencia 12
 
 kill $VPID 2>/dev/null
 sleep 5
-echo "== cliente rc=$rc | por leer: $(pendientes | tail -1) | por verificar: $(por_verificar | tail -1) =="
+PEND_FIN=$(pendientes | tail -1)
+VER_FIN=$(por_verificar | tail -1)
+echo "== cliente rc=$rc | por leer: $PEND_FIN | por verificar: $VER_FIN =="
+# Un job que no bajó ninguno de los dos contadores solo reintentó lo que falla
+# siempre. El siguiente haría lo mismo.
+if [ "${PEND_FIN:-0}" -ge "${PEND:-0}" ] && [ "${VER_FIN:-0}" -ge "${VER:-0}" ]; then
+  cancelar_sucesor "sin progreso en este job"
+fi
 echo "== fin $(date -Is) =="
 exit $rc

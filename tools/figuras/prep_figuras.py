@@ -68,6 +68,37 @@ def inventario() -> list[dict]:
     return filas
 
 
+def fusionar_worklist(previas: list[dict], nuevas: list[dict]) -> list[dict]:
+    """El worklist nuevo sin perder nada del anterior.
+
+    El inventario sale de los marcadores del vault, y la fusión los borra
+    también en páginas aún sin lectura: rehacer el worklist desde cero sacaba
+    esas páginas. Tampoco sabe nada de `motivo`, el campo de las filas de
+    rescate. Se conservan las filas previas que el inventario ya no ve y el
+    `motivo` de las que sigue viendo.
+    """
+    por_clave = {f["clave"]: f for f in previas}
+    vistas = set()
+    for f in nuevas:
+        vistas.add(f["clave"])
+        previa = por_clave.get(f["clave"])
+        if previa and "motivo" in previa:
+            f["motivo"] = previa["motivo"]
+    return nuevas + [f for f in previas if f["clave"] not in vistas]
+
+
+def leer_worklist(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    filas = []
+    for linea in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            filas.append(json.loads(linea))
+        except json.JSONDecodeError:
+            continue
+    return filas
+
+
 def render(fila: dict) -> tuple[str, str]:
     pdf = PDFS / fila["pdf"]
     if not pdf.exists():
@@ -75,24 +106,34 @@ def render(fila: dict) -> tuple[str, str]:
     destino = IMGS / fila["clave"]
     if destino.with_suffix(".jpg").exists():
         return fila["clave"], "ya"
+    # Se escribe con otro nombre y se renombra al final: un pdftoppm muerto a
+    # mitad dejaba un .jpg truncado que nadie volvía a renderizar.
+    tmp = IMGS / f".{fila['clave']}.tmp"
     cmd = [
         "pdftoppm", "-f", str(fila["pagina"]), "-l", str(fila["pagina"]),
         "-r", str(DPI), "-jpeg", "-jpegopt", "quality=88", "-singlefile",
-        str(pdf), str(destino),
+        str(pdf), str(tmp),
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=180)
     except Exception as exc:  # noqa: BLE001
+        tmp.with_suffix(".tmp.jpg").unlink(missing_ok=True)
         return fila["clave"], f"error:{type(exc).__name__}"
-    return fila["clave"], "ok" if destino.with_suffix(".jpg").exists() else "vacio"
+    if not tmp.with_suffix(".tmp.jpg").exists():
+        return fila["clave"], "vacio"
+    tmp.with_suffix(".tmp.jpg").replace(destino.with_suffix(".jpg"))
+    return fila["clave"], "ok"
 
 
 def main() -> int:
     IMGS.mkdir(parents=True, exist_ok=True)
-    filas = inventario()
-    (BASE / "worklist.jsonl").write_text(
+    worklist = BASE / "worklist.jsonl"
+    filas = fusionar_worklist(leer_worklist(worklist), inventario())
+    tmp = worklist.with_suffix(".jsonl.tmp")
+    tmp.write_text(
         "".join(json.dumps(f, ensure_ascii=False) + "\n" for f in filas), encoding="utf-8"
     )
+    tmp.replace(worklist)
     print(f"páginas a procesar : {len(filas)}", flush=True)
     print(f"documentos         : {len({f['doc'] for f in filas})}", flush=True)
 

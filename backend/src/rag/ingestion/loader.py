@@ -48,18 +48,33 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
     return data, m.group(2).lstrip("\n")
 
 
+class EmptyDocumentError(ValueError):
+    """El .md se lee bien pero no tiene cuerpo tras el frontmatter."""
+
+
 def load_document(path: Path, vault_root: Path) -> LoadedDocument | None:
-    """Carga un .md; None si no tiene el mínimo (source_hash) para ingesta confiable."""
+    """Carga un .md; None si no se puede leer o si no tiene cuerpo."""
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        return read_document(path, vault_root)
     except OSError as e:
         log.error("No se pudo leer %s: %s", path, e)
         return None
-
-    fm, body = split_frontmatter(text)
-    if not body.strip():
+    except EmptyDocumentError:
         log.warning("Documento vacío, se salta: %s", path)
         return None
+
+
+def read_document(path: Path, vault_root: Path) -> LoadedDocument:
+    """Como `load_document`, pero distingue los dos fallos.
+
+    `OSError` si el fichero no se lee y `EmptyDocumentError` si se lee y está
+    vacío. La ingesta trata distinto cada caso: un EIO transitorio no dice nada
+    del contenido, y un fichero vacío sí.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    fm, body = split_frontmatter(text)
+    if not body.strip():
+        raise EmptyDocumentError(str(path))
 
     source_hash = str(fm.get("source_hash") or "")
     if not source_hash:

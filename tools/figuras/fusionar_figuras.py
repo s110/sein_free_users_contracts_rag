@@ -275,7 +275,10 @@ def procesar_documento(md: Path, resultados: list[dict], aplicar: bool) -> dict:
     # Nunca dejar dos líneas en blanco de más donde había un marcador.
     nuevo = re.sub(r"\n{3,}", "\n\n", nuevo)
     if insertadas:
-        nuevo = sellar_frontmatter(nuevo, insertadas)
+        # El sello cuenta todos los bloques del documento, también los de
+        # oleadas anteriores: con las inserciones de esta pasada, un documento
+        # que ganaba una figura en la segunda oleada pasaba de 3 a 1.
+        nuevo = sellar_frontmatter(nuevo, len(YA_INSERTADO_RE.findall(nuevo)))
 
     cambio = nuevo != texto
     if aplicar and cambio:
@@ -308,12 +311,19 @@ def main() -> int:
     ap.add_argument("--salida", type=Path, default=Path("/Volumes/Datos/proyectos_data/osinergmin/charts"))
     args = ap.parse_args()
 
+    # Una línea truncada por un SIGKILL a mitad de escritura bloqueaba la
+    # fusión entera. Se salta y se cuenta.
+    rotas = 0
     verificacion: dict[str, list[dict]] = {}
     if args.verificacion and args.verificacion.exists():
         for linea in args.verificacion.read_text(encoding="utf-8").splitlines():
             if not linea.strip():
                 continue
-            v = json.loads(linea)
+            try:
+                v = json.loads(linea)
+            except json.JSONDecodeError:
+                rotas += 1
+                continue
             if v.get("dudosas"):
                 verificacion[v["clave"]] = v["dudosas"]
         print(f"lecturas con reparos de la segunda pasada: {len(verificacion)}")
@@ -324,7 +334,11 @@ def main() -> int:
     for linea in args.figuras.read_text(encoding="utf-8").splitlines():
         if not linea.strip():
             continue
-        r = json.loads(linea)
+        try:
+            r = json.loads(linea)
+        except json.JSONDecodeError:
+            rotas += 1
+            continue
         # Las filas de error solo llevan `clave` y el motivo: no tienen `doc`
         # ni contenido que fusionar. Se cuentan aparte y no entran al bucle.
         if r.get("error") or "doc" not in r:
@@ -374,6 +388,7 @@ def main() -> int:
     print(f"\n{'APLICADO' if args.aplicar else 'SIMULACRO'}")
     print(f"documentos con resultado : {len(resultados)}")
     print(f"filas de error saltadas  : {errores_lectura}")
+    print(f"líneas JSON ilegibles    : {rotas}")
     print(f"documentos modificados   : {len(con_cambio)}")
     print(f"figuras insertadas       : {insertadas}")
     print(f"marcadores falsos borrados: {borrados}")

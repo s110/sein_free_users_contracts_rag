@@ -33,7 +33,7 @@ from ..logging_setup import setup_logging
 from ..retrieval.store import HybridStore
 from ..schemas import ChatRequest, RetrievedChunk, SourceRef
 from ..textnorm import html_tables_to_markdown
-from .quota import DailyQuota
+from .quota import DailyQuota, seconds_until_utc_midnight
 
 log = logging.getLogger("rag.api")
 
@@ -189,17 +189,28 @@ async def chat_access(request: Request) -> None:
     (el modo histórico). La cuota vive en el backend y no en nginx porque
     nginx solo sabe limitar ráfagas por minuto; el costo real es el total de
     preguntas del día contra un LLM que atiende en serie.
+
+    Aquí solo se decide QUIÉN paga: el intento se consume en `consume_quota`,
+    dentro del handler. Como dependencia corría antes de validar el cuerpo, y
+    una petición mal formada (422) gastaba un intento.
     """
     settings: Settings = request.app.state.settings
+    request.state.quota_ip = None  # ilimitado
     if _has_valid_api_key(request):
-        request.state.quota_remaining = None  # ilimitado
         return
     if not settings.public_chat:
         await require_api_key(request)
-        request.state.quota_remaining = None
         return
+    request.state.quota_ip = _client_ip(request)
+
+
+async def consume_quota(request: Request) -> int | None:
+    """Consume un intento de la IP que fijó `chat_access`. None = ilimitado."""
+    ip = getattr(request.state, "quota_ip", None)
+    if ip is None:
+        return None
+    settings: Settings = request.app.state.settings
     quota: DailyQuota = request.app.state.quota
-    ip = _client_ip(request)
     allowed, remaining = await asyncio.to_thread(quota.hit, ip)
     if not allowed:
         raise HTTPException(
@@ -208,9 +219,9 @@ async def chat_access(request: Request) -> None:
                 f"Alcanzaste el límite de {settings.chat_daily_limit} preguntas "
                 "por día. La cuota se renueva a las 00:00 UTC."
             ),
-            headers={"Retry-After": "86400"},
+            headers={"Retry-After": str(seconds_until_utc_midnight())},
         )
-    request.state.quota_remaining = remaining
+    return remaining
 
 
 def _sse(event_type: str, data: dict) -> str:
@@ -246,9 +257,10 @@ async def health(request: Request, response: Response):
     """Estado del servicio. Devuelve 503 si algo esencial no responde.
 
     Antes siempre devolvía 200, así que el HEALTHCHECK del contenedor
-    (`curl -fsS`) daba OK con Ollama caído: Docker reportaba el backend sano,
-    `restart: unless-stopped` no se disparaba nunca, y la primera noticia del
-    incidente venía de un usuario.
+    (`curl -fsS`) daba OK con Ollama caído: Docker reportaba el backend sano
+    y la primera noticia del incidente venía de un usuario. Ojo: sin Swarm,
+    Docker solo marca el contenedor `unhealthy`; `restart: unless-stopped`
+    no lo reinicia por eso.
 
     Los detalles del fallo van al log, no al cuerpo: este endpoint no
     requiere autenticación y las cadenas de excepción exponían la topología
@@ -267,9 +279,21 @@ async def health(request: Request, response: Response):
         out["indexed_chunks"] = await asyncio.to_thread(request.app.state.store.count)
         out["qdrant"] = "ok"
     except Exception:  # noqa: BLE001
-        log.exception("Health: Qdrant no responde")
-        out["qdrant"] = "error"
         out["status"] = "degraded"
+        # Un despliegue nuevo antes de la primera ingesta no tiene colección:
+        # Qdrant responde, y decir `qdrant: error` mandaba a buscar el fallo
+        # en el sitio equivocado.
+        try:
+            exists = await asyncio.to_thread(request.app.state.store.collection_exists)
+        except Exception:  # noqa: BLE001
+            exists = None
+        if exists is False:
+            log.error("Health: la colección no existe (¿falta la primera ingesta?)")
+            out["qdrant"] = "ok"
+            out["collection"] = "missing"
+        else:
+            log.exception("Health: Qdrant no responde")
+            out["qdrant"] = "error"
     try:
         async with httpx.AsyncClient(timeout=5) as c:
             r = await c.get(f"{settings.ollama_host}/api/tags")
@@ -327,6 +351,7 @@ async def meta(request: Request):
 @app.post("/api/chat", dependencies=[Depends(chat_access)])
 async def chat(request: Request, body: ChatRequest):
     agent: ContractsAgent = request.app.state.agent
+    remaining = await consume_quota(request)
 
     async def event_stream():
         state_in = {
@@ -374,19 +399,25 @@ async def chat(request: Request, body: ChatRequest):
                     # se contrastaron una a una y cuáles no lo resistieron.
                     "claims_total": final.get("claims_total", 0),
                     "claims_ok": final.get("claims_ok", 0),
+                    "claims_unchecked": final.get("claims_unchecked", 0),
                     "claim_issues": final.get("claim_issues") or [],
                 },
             )
         except Exception:  # noqa: BLE001
             ref = uuid.uuid4().hex[:12]
             log.exception("Error en /api/chat (ref=%s)", ref)
+            # El fallo es del servidor: el intento se devuelve. Un corte del
+            # cliente o "Detener" no llegan aquí y siguen contando, o cada
+            # pregunta abandonada a medias saldría gratis.
+            ip = getattr(request.state, "quota_ip", None)
+            if ip is not None:
+                await asyncio.to_thread(request.app.state.quota.refund, ip)
             yield _sse(
                 "error",
                 {"message": f"Error interno del agente. Referencia para soporte: {ref}"},
             )
 
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
-    remaining = getattr(request.state, "quota_remaining", None)
     if remaining is not None:
         # El frontend muestra cuántas preguntas quedan hoy sin otra llamada.
         headers["X-Quota-Remaining"] = str(remaining)

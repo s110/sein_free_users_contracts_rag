@@ -23,7 +23,7 @@ from qdrant_client import QdrantClient, models
 from ..schemas import Chunk, normalize_text_filter
 from .chunker import chunk_document
 from .embedder import OllamaEmbedder
-from .loader import iter_vault, load_document
+from .loader import EmptyDocumentError, iter_vault, read_document
 
 log = logging.getLogger("rag.indexer")
 
@@ -289,13 +289,24 @@ def ingest_vault(
 
     for path in files:
         started = datetime.now(UTC)
-        doc = load_document(path, vault_dir)
-        if doc is None:
+        try:
+            doc = read_document(path, vault_dir)
+        except OSError as e:
             stats.failed += 1
+            log.error("No se pudo leer %s: %s", path, e)
             # El documento existe en el vault aunque no se haya podido leer:
             # marcarlo como visto evita que la purga de stale lo borre del
             # índice por un EIO transitorio en un montaje de red.
             seen_doc_ids.add(doc_id_for(path, vault_dir))
+            continue
+        except EmptyDocumentError:
+            stats.failed += 1
+            # El fichero se lee y está vacío: la versión indexada ya no
+            # corresponde a nada del vault. Antes se marcaba como visto y el
+            # índice servía la versión vieja sin límite de tiempo. Sin marcarlo,
+            # entra en la purga de stale, con sus mismos frenos. Sigue contando
+            # como fallido: el cron tiene que enterarse del fichero vacío.
+            log.warning("Documento vacío: %s. Su versión indexada entra en la purga", path)
             continue
         seen_doc_ids.add(doc.doc_id)
 
@@ -352,6 +363,16 @@ def ingest_vault(
                     "status": "failed",
                     "error": str(e),
                 },
+            )
+
+    if forzados:
+        en_el_vault = {doc_id_for(p, vault_dir) for p in files}
+        ausentes = sorted(forzados - en_el_vault)
+        if ausentes:
+            log.warning(
+                "La lista de reindexado nombra %d doc_id que no están en el vault: %s",
+                len(ausentes),
+                ", ".join(ausentes[:20]),
             )
 
     stale = set(existing) - seen_doc_ids

@@ -87,11 +87,16 @@ export async function streamChat(
     for (const frame of frames) {
       const line = frame.split("\n").find((l) => l.startsWith("data: "));
       if (!line) continue;
+      let ev: SseEvent;
       try {
-        onEvent(JSON.parse(line.slice(6)) as SseEvent);
+        ev = JSON.parse(line.slice(6)) as SseEvent;
       } catch {
         // frame corrupto: se ignora, el evento "end" trae la respuesta completa
+        continue;
       }
+      // Fuera del try: un fallo del manejador no es un frame corrupto, y
+      // tragárselo dejaba el mensaje a medio actualizar sin ningún error.
+      onEvent(ev);
     }
   }
 }

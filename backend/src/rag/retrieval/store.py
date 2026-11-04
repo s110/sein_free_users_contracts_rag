@@ -254,6 +254,9 @@ class HybridStore:
     def count(self) -> int:
         return self.client.count(self.collection, exact=True).count
 
+    def collection_exists(self) -> bool:
+        return self.client.collection_exists(self.collection)
+
     def find_extreme_doc(self, filters: dict | None, *, latest: bool = True) -> dict | None:
         """El documento con fecha de suscripción máxima (o mínima). Ver find_extreme_docs."""
         docs = self.find_extreme_docs(filters, latest=latest, n=1)

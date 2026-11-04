@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from rag.ingestion.indexer import (
@@ -271,16 +273,20 @@ class TestPurgaDeStale:
         assert stats.deleted_stale == 10
         assert stats.ok
 
-    def test_un_documento_ilegible_no_se_purga(self, vault):
+    def test_un_documento_ilegible_no_se_purga(self, vault, monkeypatch):
         """Un EIO transitorio en un montaje de red hacía que load_document
         devolviera None; el doc quedaba fuera de `seen` y la purga lo borraba
         del índice, dejando el contrato inconsultable hasta la corrida
         siguiente."""
         write_doc(vault, "a")
-        # Documento que load_document rechaza (cuerpo vacío tras el frontmatter).
-        (vault / "a.md").write_text(
-            '---\nsource_hash: "hash1"\ntipo: "contrato"\n---\n\n   \n', encoding="utf-8"
-        )
+        leer = Path.read_text
+
+        def eio(self, *args, **kwargs):
+            if self.name == "a.md":
+                raise OSError(5, "Input/output error")
+            return leer(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", eio)
         client = FakeQdrant({"a": "hash1"})
         stats = run(vault, client)
         assert stats.failed == 1

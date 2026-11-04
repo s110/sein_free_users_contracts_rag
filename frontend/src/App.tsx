@@ -83,9 +83,15 @@ export default function App() {
       // Las fuentes de la respuesta anterior siguen visibles en el panel
       // hasta que lleguen las nuevas; cada mensaje conserva las suyas.
 
-      const history = messages
-        .filter((m) => !m.error)
-        .map((m) => ({ role: m.role, content: m.content }));
+      // Una respuesta con error o detenida sale del historial junto con su
+      // pregunta. Antes el texto parcial viajaba como respuesta completa, y
+      // tras un error el turno siguiente mandaba dos preguntas seguidas.
+      const fallida = (r?: ChatMessage) => !!r && (!!r.error || !!r.stopped);
+      const history: { role: string; content: string }[] = [];
+      messages.forEach((m, i) => {
+        if (m.role === "user" ? fallida(messages[i + 1]) : fallida(m)) return;
+        history.push({ role: m.role, content: m.content });
+      });
 
       setMessages((prev) => [
         ...prev,
@@ -137,6 +143,7 @@ export default function App() {
                 grounded: ev.data.grounded,
                 claimsTotal: ev.data.claims_total,
                 claimsOk: ev.data.claims_ok,
+                claimsUnchecked: ev.data.claims_unchecked ?? 0,
                 claimIssues: ev.data.claim_issues,
                 noContext: ev.data.no_context,
                 streaming: false,
@@ -161,7 +168,7 @@ export default function App() {
         if ((e as Error).name !== "AbortError") {
           updateLast({ streaming: false, status: undefined, error: (e as Error).message });
         } else {
-          updateLast({ streaming: false, status: undefined });
+          updateLast({ streaming: false, status: undefined, stopped: true });
         }
       } finally {
         setBusy(false);
@@ -237,6 +244,9 @@ export default function App() {
           <button
             onClick={() => {
               setApiKey(apiKeyInput);
+              // Con clave el backend no manda X-Quota-Remaining: el último
+              // valor anónimo dejaba visible "Agotaste tus preguntas de hoy".
+              setQuotaRemaining(null);
               setShowSettings(false);
             }}
           >

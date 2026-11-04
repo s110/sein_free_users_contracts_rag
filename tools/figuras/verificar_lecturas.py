@@ -173,10 +173,17 @@ async def main() -> int:
     args = ap.parse_args()
 
     candidatas = []
+    rotas = 0
     for linea in args.figuras.read_text(encoding="utf-8").splitlines():
         if not linea.strip():
             continue
-        d = json.loads(linea)
+        try:
+            d = json.loads(linea)
+        except json.JSONDecodeError:
+            # Una línea truncada por un SIGKILL a mitad de escritura hacía
+            # fallar la verificación en cada job de la cadena.
+            rotas += 1
+            continue
         if d.get("error") or not d.get("aporta_informacion"):
             continue
         if d.get("tipo") not in TIPOS_A_REVISAR:
@@ -185,6 +192,8 @@ async def main() -> int:
             continue
         candidatas.append(d)
 
+    if rotas:
+        print(f"líneas ilegibles en {args.figuras.name}: {rotas} (se saltan)", flush=True)
     ya = hechos(args.salida)
     pendientes = [c for c in candidatas if c["clave"] not in ya]
     print(f"candidatas={len(candidatas)} hechas={len(ya)} pendientes={len(pendientes)}", flush=True)

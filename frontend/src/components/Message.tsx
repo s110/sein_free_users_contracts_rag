@@ -17,6 +17,7 @@ export function Message({ message, onCite, onShowSources }: Props) {
   const issues = message.claimIssues ?? [];
   const total = message.claimsTotal ?? 0;
   const ok = message.claimsOk ?? 0;
+  const unchecked = message.claimsUnchecked ?? 0;
   const refutadas = issues.filter((i) => i.estado === "refutada").length;
   return (
     <div className="msg msg-assistant">
@@ -38,8 +39,13 @@ export function Message({ message, onCite, onShowSources }: Props) {
           ⚠ {message.error}
         </div>
       )}
-      {!message.streaming && !message.error && message.content && (
+      {!message.streaming && !message.error && (message.content || message.stopped) && (
         <div className="msg-footer">
+          {message.stopped && (
+            <span className="badge badge-muted" title="Pulsaste Detener antes de que terminara">
+              Respuesta detenida: incompleta y sin verificar
+            </span>
+          )}
           {message.grounded === true && total > 0 && (
             <span
               className="badge badge-ok"
@@ -56,6 +62,25 @@ export function Message({ message, onCite, onShowSources }: Props) {
             >
               {refutadas > 0 ? "✗" : "⚠"} {issues.length} de {total} sin sustento
               {ok > 0 && ` · ${ok} verificada${ok === 1 ? "" : "s"}`}
+            </span>
+          )}
+          {unchecked > 0 && (
+            <span
+              className="badge badge-warn"
+              title="El verificador contrasta un número máximo de afirmaciones por respuesta"
+            >
+              ⚠ {unchecked} afirmacion{unchecked === 1 ? "" : "es"} sin contrastar
+              {issues.length === 0 && ok > 0 && ` · ${ok} verificada${ok === 1 ? "" : "s"}`}
+            </span>
+          )}
+          {message.grounded == null && total === 0 && !message.noContext && sources.length > 0 && (
+            // Sin esta marca, una respuesta que nadie verificó se veía igual
+            // que una respuesta sin datos que verificar.
+            <span
+              className="badge badge-muted"
+              title="El verificador no pudo extraer afirmaciones de esta respuesta"
+            >
+              Sin verificar
             </span>
           )}
           {message.noContext && <span className="badge badge-muted">Sin contexto en el índice</span>}

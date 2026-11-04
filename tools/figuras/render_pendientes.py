@@ -24,13 +24,19 @@ def render(fila: dict) -> str:
     pdf = PDFS / fila["pdf"]
     if not pdf.exists():
         return "sin_pdf"
+    # Mismo renombrado final que prep_figuras.render: nunca un .jpg truncado.
+    tmp = IMGS / f".{fila['clave']}.tmp"
     cmd = ["pdftoppm", "-f", str(fila["pagina"]), "-l", str(fila["pagina"]), "-r", str(DPI),
-           "-jpeg", "-jpegopt", "quality=88", "-singlefile", str(pdf), str(destino)]
+           "-jpeg", "-jpegopt", "quality=88", "-singlefile", str(pdf), str(tmp)]
     try:
         subprocess.run(cmd, check=True, capture_output=True, timeout=180)
     except Exception as exc:  # noqa: BLE001
+        tmp.with_suffix(".tmp.jpg").unlink(missing_ok=True)
         return f"error:{type(exc).__name__}"
-    return "ok" if destino.with_suffix(".jpg").exists() else "vacio"
+    if not tmp.with_suffix(".tmp.jpg").exists():
+        return "vacio"
+    tmp.with_suffix(".tmp.jpg").replace(destino.with_suffix(".jpg"))
+    return "ok"
 
 
 if __name__ == "__main__":
