@@ -10,7 +10,9 @@
 #
 #   ./cierre.sh            simulacro
 #   ./cierre.sh --aplicar  lo hace
-set -u
+# pipefail: en zsh el estado de una tubería es el de su último comando, y
+# `docker compose ... | tail` ocultaba el fallo del build y de la ingesta.
+set -uo pipefail
 
 APLICAR=${1:-}
 FIG=osinergmin/figuras
@@ -33,6 +35,13 @@ echo "══ 1. Restaurar el vault virgen en Khipu ══"
 ssh khipu 'set -e
   B=$(ls -t $HOME/osinergmin/figuras/out/vault_backup_*.tar.gz | tail -1)
   echo "restaurando desde $(basename $B)"
+  # El respaldo tiene que ser el vault virgen. Si la primera fusión corrió con
+  # un --salida nuevo, el respaldo ya trae documentos sellados, y restaurarlo
+  # no deshace nada. Se comprueba antes de extraer.
+  S=$(tar -xzOf "$B" | grep -ac "^figuras_leidas:" || true)
+  if [ "$S" -ne 0 ]; then
+    echo "!! el respaldo tiene $S documentos con sello: no es el vault virgen"; exit 1
+  fi
   tar -xzf "$B" -C $HOME/osinergmin/vault
   echo "documentos con sello tras restaurar: $(grep -l "^figuras_leidas:" $HOME/osinergmin/vault/*.md 2>/dev/null | wc -l)"' || exit 1
 
@@ -56,21 +65,31 @@ echo "$SALIDA" | grep -E "files transferred|total size" | head -2
 echo
 echo "══ 4. Reconstruir la imagen del backend (cambió el chunker) ══"
 cd "$REPO" || exit 1
-/usr/local/bin/docker compose build backend ingest 2>&1 | tail -2
-/usr/local/bin/docker compose up -d backend 2>&1 | tail -1
+/usr/local/bin/docker compose build backend ingest 2>&1 | tail -2 \
+  || { echo "!! el build falló: no reindexo con la imagen vieja"; exit 1; }
+/usr/local/bin/docker compose up -d backend 2>&1 | tail -1 || exit 1
 
 echo
-echo "══ 5. Reindexar todo documento con sello ══"
-: > "$LOCAL/docs_a_reindexar.txt"
-for f in "$VAULT"/*.md; do
-  grep -q '^figuras_leidas:' "$f" && basename "$f" .md >> "$LOCAL/docs_a_reindexar.txt"
-done
+echo "══ 5. Reindexar todo documento que difiere del vault virgen ══"
+# Dos fuentes. El sello del vault del Mac nombra los documentos con figura.
+# La lista de la fusión de este cierre nombra además los que solo perdieron
+# marcadores falsos: la fusión parte del vault virgen, así que esa lista los
+# trae todos. Las oleadas no los vuelven a listar, y sin este paso el índice
+# conservaba sus marcadores alucinados hasta un --force.
+rsync -q khipu:"$FIG/out/docs_a_reindexar.txt" "$LOCAL/docs_cambiados.txt" || exit 1
+{
+  cat "$LOCAL/docs_cambiados.txt"
+  for f in "$VAULT"/*.md; do
+    grep -q '^figuras_leidas:' "$f" && basename "$f" .md
+  done
+} | sort -u > "$LOCAL/docs_a_reindexar.txt"
 N=$(wc -l < "$LOCAL/docs_a_reindexar.txt" | tr -d ' ')
-echo "documentos con figura: $N"
+echo "documentos a reindexar: $N"
 if [[ "$N" -gt 0 ]]; then
   /usr/local/bin/docker compose run --rm \
     -v "$LOCAL/docs_a_reindexar.txt:/data/lista.txt:ro" \
-    ingest sein-rag-ingest --reindexar-lista /data/lista.txt 2>&1 | tail -2
+    ingest sein-rag-ingest --reindexar-lista /data/lista.txt 2>&1 | tail -2 \
+    || { echo "!! la ingesta falló: el índice no refleja el vault"; exit 1; }
 fi
 
 echo

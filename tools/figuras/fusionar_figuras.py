@@ -275,7 +275,10 @@ def procesar_documento(md: Path, resultados: list[dict], aplicar: bool) -> dict:
     # Nunca dejar dos líneas en blanco de más donde había un marcador.
     nuevo = re.sub(r"\n{3,}", "\n\n", nuevo)
     if insertadas:
-        nuevo = sellar_frontmatter(nuevo, insertadas)
+        # El sello cuenta todos los bloques del documento, también los de
+        # oleadas anteriores: con las inserciones de esta pasada, un documento
+        # que ganaba una figura en la segunda oleada pasaba de 3 a 1.
+        nuevo = sellar_frontmatter(nuevo, len(YA_INSERTADO_RE.findall(nuevo)))
 
     cambio = nuevo != texto
     if aplicar and cambio:

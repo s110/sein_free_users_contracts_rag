@@ -15,7 +15,10 @@
 #                                        alguna oleada anterior.
 #   ./aplicar_oleada.sh --aplicar todo   reindexa además los que solo pierden
 #                                        marcadores falsos (mucho más lento)
-set -u
+# pipefail: en zsh el estado de una tubería es el de su último comando. Sin
+# esto, `sein-rag-ingest ... | tail` devolvía el 0 de `tail` aunque la ingesta
+# fallara.
+set -uo pipefail
 
 APLICAR=${1:-}
 ALCANCE=${2:-figuras}
@@ -85,7 +88,8 @@ echo "══ 4. Reindexar solo esos documentos ══"
 cd "$REPO" || exit 1
 /usr/local/bin/docker compose run --rm \
   -v "$LOCAL/docs_a_reindexar.txt:/data/lista.txt:ro" \
-  ingest sein-rag-ingest --reindexar-lista /data/lista.txt 2>&1 | tail -3
+  ingest sein-rag-ingest --reindexar-lista /data/lista.txt 2>&1 | tail -3 \
+  || { echo "!! la ingesta falló: el índice no tiene esta oleada completa"; exit 1; }
 
 echo
 echo "══ 5. Verificar las invariantes del vault ══"
