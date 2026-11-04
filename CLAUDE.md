@@ -28,7 +28,9 @@ Todo se desmonta al terminar, pase o falle. Nunca llama a DeepSeek.
 Escenario (`backend/e2e/run_e2e.py`, fixtures en `backend/e2e/fixtures/`):
 el CLI `sein-rag-ingest` real sobre un vault con frontmatter roto, tablas HTML
 sin cerrar y `.ocr/`; reingesta idempotente; `--force` sin dos generaciones;
-vault mutado (cambio de hash, borrado, documento vacío → exit 1); luego
+vault mutado (cambio de hash, borrado, documento vacío → exit 1); un
+contrato indexado cuyo `.md` queda vacío (exit 1 y su versión vieja sale del
+índice por la purga, con los mismos frenos); luego
 uvicorn + `/api/chat` SSE con la trampa Celepsa→Pluz, un seguimiento con
 historial, una adenda con filtros (pregunta corta que no nombra el contrato),
 la cifra nueva del contrato reindexado, el verificador fundamentando esas
