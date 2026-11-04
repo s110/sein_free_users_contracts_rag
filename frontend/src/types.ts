@@ -27,6 +27,8 @@ export interface ChatMessage {
   grounded?: boolean | null;
   claimsTotal?: number;
   claimsOk?: number;
+  /** Afirmaciones que pasaron del tope del verificador y nadie contrastó. */
+  claimsUnchecked?: number;
   claimIssues?: ClaimIssue[];
   noContext?: boolean;
   status?: string; // paso actual del agente mientras genera
@@ -54,6 +56,7 @@ export type SseEvent =
         sources: SourceRef[];
         claims_total: number;
         claims_ok: number;
+        claims_unchecked?: number;
         claim_issues: ClaimIssue[];
       };
     }

@@ -241,6 +241,10 @@ del contrato entre el Suministrador y el Cliente de la ficha, salvo que el texto
 diga expresamente que pertenecen a otro contrato."""
 
 CLAIM_STATES = ("sustentada", "refutada", "ausente", "sin_cita")
+# Lo que REFUTE_PROMPT le permite responder al refutador. `sin_cita` lo pone
+# el propio verificador cuando la afirmación no trae [n]; si el refutador lo
+# devolviera, se mezclaría con ese caso aunque la afirmación sí citara.
+REFUTE_STATES = ("sustentada", "refutada", "ausente")
 
 OUT_OF_SCOPE_ANSWER = (
     "Este asistente responde únicamente preguntas sobre los contratos de suministro "

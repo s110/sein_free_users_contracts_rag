@@ -37,6 +37,8 @@ MAX_HISTORY_MESSAGES = 8
 
 # Techo de afirmaciones verificadas por respuesta: acota el costo del
 # verificador (una llamada por fragmento citado) y el tamaño del informe.
+# Las que pasan del techo se cuentan en `claims_unchecked` y la respuesta no
+# puede salir como fundamentada.
 MAX_CLAIMS = 25
 # Un chunk son ~3200 caracteres; este techo solo protege de un chunk anómalo.
 VERIFY_FRAGMENT_CHARS = 6000
@@ -503,7 +505,7 @@ class ContractsAgent:
         if not isinstance(raw, list):
             return []
         claims: list[dict] = []
-        for item in raw[:MAX_CLAIMS]:
+        for item in raw:
             if not isinstance(item, dict):
                 continue
             texto = str(item.get("texto") or "").strip()
@@ -554,7 +556,7 @@ class ContractsAgent:
             except (TypeError, ValueError):
                 continue
             estado = str(v.get("estado") or "").lower().strip()
-            if estado not in prompts.CLAIM_STATES or not 1 <= local <= len(group):
+            if estado not in prompts.REFUTE_STATES or not 1 <= local <= len(group):
                 continue
             claim_idx = group[local - 1][0]
             out[claim_idx] = (estado, str(v.get("motivo") or "")[:120])
@@ -572,7 +574,13 @@ class ContractsAgent:
         """
         docs = state.get("relevant_documents") or []
         answer = str(state.get("answer") or "")
-        empty = {"grounded": None, "claims_total": 0, "claims_ok": 0, "claim_issues": []}
+        empty = {
+            "grounded": None,
+            "claims_total": 0,
+            "claims_ok": 0,
+            "claims_unchecked": 0,
+            "claim_issues": [],
+        }
         if not docs or not answer.strip():
             return empty
         try:
@@ -582,6 +590,11 @@ class ContractsAgent:
             return empty
         if not claims:
             return empty
+        # Antes el techo cortaba en silencio: si las 25 primeras se sostenían,
+        # la insignia decía "25 afirmaciones contrastadas" sobre una respuesta
+        # con más datos que nadie había contrastado.
+        unchecked = max(0, len(claims) - MAX_CLAIMS)
+        claims = claims[:MAX_CLAIMS]
         # Con una sola fuente citada en toda la respuesta, una afirmación sin
         # [n] propio solo puede apoyarse en esa fuente: el extractor perdía la
         # cita de párrafo ("... rige desde el 1 de febrero. La adenda ... [1].")
@@ -658,24 +671,26 @@ class ContractsAgent:
             estado, motivo = refutada if refutada else estados[0]
             issues.append({"texto": c["texto"], "estado": estado, "motivo": motivo})
 
-        if ok == len(claims):
-            grounded: bool | None = True
-        elif any(i["estado"] == "refutada" for i in issues):
-            grounded = False
+        if any(i["estado"] == "refutada" for i in issues):
+            grounded: bool | None = False
+        elif ok == len(claims) and not unchecked:
+            grounded = True
         else:
             # Ni contradichas ni sustentadas: verificación no concluyente.
             grounded = None
         log.info(
-            "verify: %d/%d afirmaciones sustentadas, %d con reparo",
+            "verify: %d/%d afirmaciones sustentadas, %d con reparo, %d sin contrastar",
             ok,
             len(claims),
             len(issues),
+            unchecked,
         )
         return {
             "grounded": grounded,
             "claims_total": len(claims),
             "claims_ok": ok,
-            "claim_issues": issues[:MAX_CLAIMS],
+            "claims_unchecked": unchecked,
+            "claim_issues": issues,
         }
 
     async def no_context(self, state: AgentState) -> dict:
@@ -683,7 +698,10 @@ class ContractsAgent:
             "answer": prompts.NO_CONTEXT_ANSWER,
             "no_context": True,
             "relevant_documents": [],
-            "grounded": True,
+            # Nada que verificar: `True` contaba cada "no está en el índice"
+            # como respuesta fundamentada, y el grounded rate del eval subía
+            # justo cuando el retrieval empeoraba.
+            "grounded": None,
         }
 
     # --- Aristas condicionales ---

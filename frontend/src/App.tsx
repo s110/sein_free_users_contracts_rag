@@ -137,6 +137,7 @@ export default function App() {
                 grounded: ev.data.grounded,
                 claimsTotal: ev.data.claims_total,
                 claimsOk: ev.data.claims_ok,
+                claimsUnchecked: ev.data.claims_unchecked ?? 0,
                 claimIssues: ev.data.claim_issues,
                 noContext: ev.data.no_context,
                 streaming: false,

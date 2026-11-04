@@ -374,6 +374,7 @@ async def chat(request: Request, body: ChatRequest):
                     # se contrastaron una a una y cuáles no lo resistieron.
                     "claims_total": final.get("claims_total", 0),
                     "claims_ok": final.get("claims_ok", 0),
+                    "claims_unchecked": final.get("claims_unchecked", 0),
                     "claim_issues": final.get("claim_issues") or [],
                 },
             )

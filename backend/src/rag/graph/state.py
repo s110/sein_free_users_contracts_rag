@@ -33,5 +33,6 @@ class AgentState(TypedDict, total=False):
     # Verificación adversaria por afirmación (ver ContractsAgent.verify)
     claims_total: int
     claims_ok: int
+    claims_unchecked: int  # afirmaciones por encima de MAX_CLAIMS
     claim_issues: list[dict]  # [{texto, estado, motivo}] de las no sustentadas
     no_context: bool  # no se encontró nada relevante → respuesta honesta
