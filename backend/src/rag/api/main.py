@@ -257,9 +257,10 @@ async def health(request: Request, response: Response):
     """Estado del servicio. Devuelve 503 si algo esencial no responde.
 
     Antes siempre devolvía 200, así que el HEALTHCHECK del contenedor
-    (`curl -fsS`) daba OK con Ollama caído: Docker reportaba el backend sano,
-    `restart: unless-stopped` no se disparaba nunca, y la primera noticia del
-    incidente venía de un usuario.
+    (`curl -fsS`) daba OK con Ollama caído: Docker reportaba el backend sano
+    y la primera noticia del incidente venía de un usuario. Ojo: sin Swarm,
+    Docker solo marca el contenedor `unhealthy`; `restart: unless-stopped`
+    no lo reinicia por eso.
 
     Los detalles del fallo van al log, no al cuerpo: este endpoint no
     requiere autenticación y las cadenas de excepción exponían la topología
@@ -278,9 +279,21 @@ async def health(request: Request, response: Response):
         out["indexed_chunks"] = await asyncio.to_thread(request.app.state.store.count)
         out["qdrant"] = "ok"
     except Exception:  # noqa: BLE001
-        log.exception("Health: Qdrant no responde")
-        out["qdrant"] = "error"
         out["status"] = "degraded"
+        # Un despliegue nuevo antes de la primera ingesta no tiene colección:
+        # Qdrant responde, y decir `qdrant: error` mandaba a buscar el fallo
+        # en el sitio equivocado.
+        try:
+            exists = await asyncio.to_thread(request.app.state.store.collection_exists)
+        except Exception:  # noqa: BLE001
+            exists = None
+        if exists is False:
+            log.error("Health: la colección no existe (¿falta la primera ingesta?)")
+            out["qdrant"] = "ok"
+            out["collection"] = "missing"
+        else:
+            log.exception("Health: Qdrant no responde")
+            out["qdrant"] = "error"
     try:
         async with httpx.AsyncClient(timeout=5) as c:
             r = await c.get(f"{settings.ollama_host}/api/tags")

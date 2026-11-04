@@ -71,6 +71,7 @@ export interface HealthInfo {
   embeddings: string;
   indexed_chunks?: number;
   qdrant?: string;
+  collection?: string; // "missing" antes de la primera ingesta
   ollama?: string;
   missing_models?: string[];
 }
