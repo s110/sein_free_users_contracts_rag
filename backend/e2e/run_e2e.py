@@ -24,8 +24,9 @@ Escenario (cada paso depende del anterior):
    Luego una segunda API cuyo Ollama pasa por un proxy que falsea UNA cifra
    de la respuesta generada (la tabla de Celepsa atribuida a Pluz y una
    potencia inventada): el verificador tiene que refutarlas.
-6. Frenos de purga: vault vacío con `--allow-purge`, purga masiva sin él, y
-   la misma purga autorizada.
+6. Frenos de purga: vault vacío con `--allow-purge`, purga masiva sin él, un
+   contrato indexado cuyo `.md` queda vacío (su versión vieja sale del índice)
+   y la purga masiva autorizada.
 
 Artefactos en `artifacts/e2e/` (raíz de la repo):
 - `report.json`: entradas (hashes de fixtures, modelos, imagen), observaciones
@@ -691,10 +692,32 @@ def scenario(workdir: Path, checks: Checks, obs: dict, transcript: list) -> None
         "purga.masiva_sin_flag_indice_intacto", index_snapshot(client)["digest"] == snap4["digest"]
     )
 
+    # Un contrato indexado cuyo .md queda vacío (el OCR lo reescribió sin
+    # cuerpo). Antes conservaba su versión vieja para siempre: contaba como
+    # "visto" y la purga nunca lo alcanzaba. Ahora su versión entra en la
+    # purga, con los mismos frenos, y la corrida sigue saliendo con 1.
+    texto_oryg = (vault / f"{ORYG}.md").read_text(encoding="utf-8")
+    frontmatter_oryg = texto_oryg[: texto_oryg.index("\n---\n", 4) + 5]
+    (vault / f"{ORYG}.md").write_text(frontmatter_oryg + "\n   \n", encoding="utf-8")
+    r = obs["ingest_7b_documento_vaciado"] = ingest(workdir, vault)
+    s = r["stats"] or {}
+    checks.add("vaciado.exit_1", r["exit_code"] == 1, str(r))
+    checks.add(
+        "vaciado.falla_el_vaciado_y_el_vacio_purga_su_version",
+        (s.get("failed"), s.get("deleted_stale"), s.get("purge_skipped")) == (2, 1, 0),
+        str(s),
+    )
+    snap7b = obs["indice_7b"] = index_snapshot(client)
+    checks.add(
+        "vaciado.su_version_vieja_sale_del_indice",
+        set(snap7b["docs"]) == {PZPE, ADENDA},
+        str(list(snap7b["docs"])),
+    )
+
     r = obs["ingest_8_purga_autorizada"] = ingest(workdir, parcial, "--allow-purge")
     s = r["stats"] or {}
     checks.add("purga.autorizada_exit_0", r["exit_code"] == 0, str(r))
-    checks.add("purga.autorizada_borra_2", s.get("deleted_stale") == 2, str(s))
+    checks.add("purga.autorizada_borra_el_resto", s.get("deleted_stale") == 1, str(s))
     snap8 = obs["indice_8"] = index_snapshot(client)
     checks.add("purga.autorizada_solo_queda_la_adenda", set(snap8["docs"]) == {ADENDA})
 
